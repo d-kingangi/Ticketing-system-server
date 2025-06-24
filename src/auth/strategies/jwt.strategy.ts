@@ -14,11 +14,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
+    // The JWT payload now contains 'roles' (an array) instead of 'role' (a string).
+    // Ensure the payload is correctly mapped to the user object.
     return {
       userId: payload.sub,
       email: payload.email,
-      role: payload.role,
-      clientId: payload.clientId,
+      roles: payload.roles, // Changed from 'role' to 'roles' (array)
     };
   }
 }
