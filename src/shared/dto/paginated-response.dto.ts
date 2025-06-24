@@ -21,7 +21,15 @@ export class PaginatedResponseDto<T> {
   @Type(() => Number)
   totalPages: number;
 
-  constructor(partial: Partial<PaginatedResponseDto<T>>) {
+  // constructor(partial: Partial<PaginatedResponseDto<T>>) {
+  //   Object.assign(this, partial);
+  // }
+  constructor(partial: {
+    data: T[];
+    total: number;
+    currentPage: number;
+    totalPages: number;
+  }) {
     Object.assign(this, partial);
   }
 }
