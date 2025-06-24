@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { JwtAuthModule } from './jwt.module';
 import { MongooseModule } from '@nestjs/mongoose';
-import { ClientsModule } from '../clients/clients.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { ClientAccessGuard } from './guards/client-access.guard';
@@ -17,7 +16,6 @@ import { EmailModule } from 'src/emails/emails.module';
     PassportModule,
     JwtAuthModule,
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
-    ClientsModule,
     EmailModule,
   ],
   controllers: [AuthController],
