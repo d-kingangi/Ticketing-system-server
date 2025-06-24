@@ -1,4 +1,3 @@
-// src/database/base.repository.ts
 import {
   Document,
   Model,
@@ -6,6 +5,7 @@ import {
   UpdateQuery,
   ProjectionType,
   PipelineStage,
+  QueryOptions,
 } from 'mongoose';
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 
@@ -16,7 +16,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 export class BaseRepository<T extends Document> {
   protected readonly logger = new Logger(this.constructor.name);
 
-  constructor(protected readonly model: Model<T>) {}
+  constructor(protected readonly model: Model<T>) { }
 
   /**
    * Protected method to get model - available to subclasses
@@ -26,32 +26,34 @@ export class BaseRepository<T extends Document> {
   }
 
   /**
-   * Find all documents for a specific client
+   * Creates a new document.
+   * @param createDto - The data for the new document.
+   */
+  async create(createDto: Partial<T>): Promise<T> {
+    try {
+      // The createDto is now used directly, as clientId/branchId are not added here.
+      const newDocument = new this.model(createDto);
+      return await newDocument.save();
+    } catch (error) {
+      this.logger.error(`Error in create: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Finds all documents matching a given filter.
+   * @param filter - The MongoDB filter query.
+   * @param projection - The fields to include or exclude.
+   * @param options - Query options like limit, skip, and sort.
    */
   async findAll(
-    clientId: string,
     filter: FilterQuery<T> = {},
     projection?: ProjectionType<T>,
-    options: { limit?: number; skip?: number; sort?: any } = {},
+    options: QueryOptions<T> = {},
   ): Promise<T[]> {
-    // If clientId is provided, add it to filter for client isolation
-    const clientFilter = clientId ? { ...filter, clientId } : filter;
-
     try {
-      const query = this.model.find(clientFilter, projection);
-
-      if (options.sort) {
-        query.sort(options.sort);
-      }
-
-      if (options.skip) {
-        query.skip(options.skip);
-      }
-
-      if (options.limit) {
-        query.limit(options.limit);
-      }
-
+      // The filter is now used directly without modification.
+      const query = this.model.find(filter, projection, options);
       return await query.exec();
     } catch (error) {
       this.logger.error(`Error in findAll: ${error.message}`, error.stack);
@@ -60,30 +62,33 @@ export class BaseRepository<T extends Document> {
   }
 
   /**
-   * Find documents with pagination
+   * Finds documents with pagination.
+   * @param filter - The MongoDB filter query.
+   * @param page - The current page number.
+   * @param limit - The number of items per page.
+   * @param sort - The sort order.
    */
   async findWithPagination(
-    clientId: string,
+    filter: FilterQuery<T> = {},
     page = 1,
     limit = 10,
-    filter: FilterQuery<T> = {},
-    projection?: ProjectionType<T>,
     sort?: any,
-  ): Promise<{ data: T[]; total: number; pages: number }> {
-    // If clientId is provided, add it to filter for client isolation
-    const clientFilter = clientId ? { ...filter, clientId } : filter;
+  ): Promise<{ data: T[]; total: number; pages: number; page: number; limit: number }> {
     const skip = (page - 1) * limit;
 
     try {
+      // The filter is passed directly to both the findAll and countDocuments calls.
       const [data, total] = await Promise.all([
-        this.findAll(clientId, filter, projection, { limit, skip, sort }),
-        this.model.countDocuments(clientFilter).exec(),
+        this.findAll(filter, null, { limit, skip, sort }),
+        this.model.countDocuments(filter).exec(),
       ]);
 
       return {
         data,
         total,
         pages: Math.ceil(total / limit),
+        page,
+        limit,
       };
     } catch (error) {
       this.logger.error(
@@ -95,18 +100,14 @@ export class BaseRepository<T extends Document> {
   }
 
   /**
-   * Find one document by ID for a specific client
+   * Finds a single document by its ID.
+   * @param id - The document ID.
+   * @param projection - The fields to include or exclude.
    */
-  async findById(
-    id: string,
-    clientId: string,
-    projection?: ProjectionType<T>,
-  ): Promise<T> {
+  async findById(id: string, projection?: ProjectionType<T>): Promise<T> {
     try {
-      // Build query based on whether clientId is provided
-      const query = clientId ? { _id: id, clientId } : { _id: id };
-
-      const document = await this.model.findOne(query, projection).exec();
+      // The query is simplified, as it no longer needs to check for clientId.
+      const document = await this.model.findById(id, projection).exec();
 
       if (!document) {
         throw new NotFoundException(`Document with ID ${id} not found`);
@@ -123,23 +124,20 @@ export class BaseRepository<T extends Document> {
   }
 
   /**
-   * Find one document by custom filter for a specific client
+   * Finds a single document by a custom filter.
+   * @param filter - The MongoDB filter query.
+   * @param projection - The fields to include or exclude.
    */
   async findOne(
     filter: FilterQuery<T>,
-    clientId: string,
     projection?: ProjectionType<T>,
   ): Promise<T> {
-    // If clientId is provided, add it to filter for client isolation
-    const clientFilter = clientId ? { ...filter, clientId } : filter;
-
     try {
-      const document = await this.model
-        .findOne(clientFilter, projection)
-        .exec();
+      // The filter is used directly without modification.
+      const document = await this.model.findOne(filter, projection).exec();
 
       if (!document) {
-        throw new NotFoundException(`Document not found`);
+        throw new NotFoundException(`Document not found with the given filter`);
       }
 
       return document;
@@ -153,36 +151,16 @@ export class BaseRepository<T extends Document> {
   }
 
   /**
-   * Create a new document with client association
+   * Updates a document by its ID.
+   * @param id - The ID of the document to update.
+   * @param updateDto - The update query.
    */
-  async create(createDto: Partial<T>, clientId: string): Promise<T> {
+  async update(id: string, updateDto: UpdateQuery<T>): Promise<T> {
     try {
-      // Only add clientId to document if it's provided
-      const documentData = clientId ? { ...createDto, clientId } : createDto;
-
-      const newDocument = new this.model(documentData);
-
-      return await newDocument.save();
-    } catch (error) {
-      this.logger.error(`Error in create: ${error.message}`, error.stack);
-      throw error;
-    }
-  }
-
-  /**
-   * Update a document by ID for a specific client
-   */
-  async update(
-    id: string,
-    updateDto: UpdateQuery<T>,
-    clientId: string,
-  ): Promise<T> {
-    try {
-      // Build query based on whether clientId is provided
-      const query = clientId ? { _id: id, clientId } : { _id: id };
-
+      // The query is simplified to find by ID only.
+      // The service layer is responsible for ensuring the user has permission to update this ID.
       const document = await this.model
-        .findOneAndUpdate(query, updateDto, { new: true })
+        .findByIdAndUpdate(id, updateDto, { new: true })
         .exec();
 
       if (!document) {
@@ -200,14 +178,13 @@ export class BaseRepository<T extends Document> {
   }
 
   /**
-   * Delete a document by ID for a specific client
+   * Deletes a document by its ID. This is a hard delete.
+   * @param id - The ID of the document to delete.
    */
-  async delete(id: string, clientId: string): Promise<T> {
+  async delete(id: string): Promise<T> {
     try {
-      // Build query based on whether clientId is provided
-      const query = clientId ? { _id: id, clientId } : { _id: id };
-
-      const document = await this.model.findOneAndDelete(query).exec();
+      // The query is simplified to find by ID only.
+      const document = await this.model.findByIdAndDelete(id).exec();
 
       if (!document) {
         throw new NotFoundException(`Document with ID ${id} not found`);
@@ -224,14 +201,13 @@ export class BaseRepository<T extends Document> {
   }
 
   /**
-   * Count documents for a specific client
+   * Counts documents matching a given filter.
+   * @param filter - The MongoDB filter query.
    */
-  async count(filter: FilterQuery<T>, clientId: string): Promise<number> {
-    // If clientId is provided, add it to filter for client isolation
-    const clientFilter = clientId ? { ...filter, clientId } : filter;
-
+  async count(filter: FilterQuery<T>): Promise<number> {
     try {
-      return await this.model.countDocuments(clientFilter).exec();
+      // The filter is used directly.
+      return await this.model.countDocuments(filter).exec();
     } catch (error) {
       this.logger.error(`Error in count: ${error.message}`, error.stack);
       throw error;
@@ -239,16 +215,13 @@ export class BaseRepository<T extends Document> {
   }
 
   /**
-   * Perform aggregation for a specific client
+   * Performs an aggregation pipeline.
+   * @param pipeline - The MongoDB aggregation pipeline stages.
    */
-  async aggregate(pipeline: PipelineStage[], clientId: string): Promise<any[]> {
+  async aggregate(pipeline: PipelineStage[]): Promise<any[]> {
     try {
-      // Only add clientId match stage if clientId is provided
-      const clientPipeline = clientId
-        ? [{ $match: { clientId } }, ...pipeline]
-        : pipeline;
-
-      return await this.model.aggregate(clientPipeline).exec();
+      // The pipeline is executed directly without adding a $match stage.
+      return await this.model.aggregate(pipeline).exec();
     } catch (error) {
       this.logger.error(`Error in aggregate: ${error.message}`, error.stack);
       throw error;
