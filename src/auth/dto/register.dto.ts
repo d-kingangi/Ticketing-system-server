@@ -1,4 +1,3 @@
-// src/auth/dto/register.dto.ts
 import {
   IsEmail,
   IsString,
@@ -13,7 +12,11 @@ import { UserRole } from '../schema/user.schema';
 export class RegisterDto {
   @IsNotEmpty()
   @IsString()
-  fullName: string;
+  firstName: string;
+
+ @IsNotEmpty()
+  @IsString()
+  lastName: string;
 
   @IsNotEmpty()
   @IsEmail()
@@ -21,8 +24,16 @@ export class RegisterDto {
 
   @IsNotEmpty()
   @IsString()
-  @MinLength(6)
+  @MinLength(8)
   password: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string
+
+  @IsOptional()
+  @IsString()
+  profileUrl?: string;
 
   @IsOptional()
   @IsMongoId()
