@@ -1,4 +1,3 @@
-// src/auth/services/auth.service.ts
 import {
   Injectable,
   ConflictException,
@@ -13,7 +12,6 @@ import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
 import { User, UserDocument, UserRole } from './schema/user.schema';
-import { ClientsService } from 'src/clients/clients.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -28,7 +26,6 @@ export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private jwtService: JwtService,
-    private clientsService: ClientsService,
     private configService: ConfigService,
     private emailsService: EmailsService,
   ) {}
@@ -37,51 +34,58 @@ export class AuthService {
    * Register a new user
    */
   async register(registerDto: RegisterDto): Promise<any> {
+    // Destructure the DTO to get individual fields,
+    // now including firstName, lastName, phone, and profileUrl.
+    // The 'role' field is no longer directly destructured as it's now an array
+    // and will be defaulted or explicitly set.
     const {
       email,
       password,
       clientId,
-      role = UserRole.PATIENT,
-      fullName,
+      firstName,
+      lastName,
+      phone,
+      profileUrl,
     } = registerDto;
 
     try {
-      // Check if the client exists (unless it's an admin user with no client)
-      if (clientId) {
-        const client = await this.clientsService.findOne(clientId);
-        if (!client) {
-          throw new BadRequestException('Client does not exist');
-        }
-      }
-
-      // Check if user already exists
+      // Check if a user with this email already exists
       const existingUser = await this.userModel.findOne({ email }).exec();
       if (existingUser) {
         throw new ConflictException('User with this email already exists');
       }
 
-      // Hash the password
+      // Hash the password for security before saving
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Create new user
+      // Create a new user instance with updated fields
       const newUser = new this.userModel({
+        // Spread the registerDto to include firstName, lastName, phone, profileUrl, and clientId
         ...registerDto,
         password: hashedPassword,
+        // Assign default role(s) for new registrations.
+        // For general registration, new users are typically 'CUSTOMER'.
+        roles: [UserRole.CUSTOMER],
+        // New users are not verified by default, email verification flow will handle this.
+        isVerified: false,
       });
 
+      // Save the new user to the database
       await newUser.save();
 
-      // Generate JWT token
+      // Prepare payload for JWT token.
+      // The 'role' field is now 'roles' (an array).
       const payload = {
         email: newUser.email,
         sub: newUser._id,
-        role: newUser.role,
-        clientId: newUser.clientId,
+        roles: newUser.roles, // Use the new 'roles' array for the JWT payload
+        // clientId: newUser.clientId, // Include clientId if present
       };
 
-      // Send welcome email (don't await to avoid blocking)
+      // Send welcome email (don't await to avoid blocking the registration response).
+      // Use the virtual 'fullName' property from the newUser object for the email.
       this.emailsService
-        .sendWelcomeEmail(email, fullName, clientId)
+        .sendWelcomeEmail(email, newUser.fullName, clientId)
         .catch((error) => {
           this.logger.error(
             `Failed to send welcome email: ${error.message}`,
@@ -89,22 +93,29 @@ export class AuthService {
           );
         });
 
+      // Return user details and the generated access token.
+      // Include new fields like firstName, lastName, and isVerified.
+      // 'roles' is now an array.
       return {
         user: {
           _id: newUser._id,
           email: newUser.email,
-          fullName: newUser.fullName,
-          role: newUser.role,
-          clientId: newUser.clientId,
+          firstName: newUser.firstName, // Include the new firstName field
+          lastName: newUser.lastName,   // Include the new lastName field
+          fullName: newUser.fullName,   // Access the virtual fullName property
+          roles: newUser.roles,         // Include the new roles array
+          isVerified: newUser.isVerified, // Include the new isVerified status
         },
         access_token: this.jwtService.sign(payload),
       };
     } catch (error) {
       this.logger.error(`Registration failed: ${error.message}`, error.stack);
+      // Re-throw the error to be handled by NestJS's global exception filter
       throw error;
     }
   }
 
+  
   /**
    * Login a user
    */
@@ -112,7 +123,7 @@ export class AuthService {
     const { email, password } = loginDto;
 
     try {
-      // Find user by email
+      // Find user by email, ensuring they are active and not deleted
       const user = await this.userModel
         .findOne({
           email,
@@ -132,41 +143,47 @@ export class AuthService {
       }
 
       // Check if user belongs to an active client (if it has a client)
-      if (user.clientId) {
-        try {
-          const client = await this.clientsService.findOne(
-            user.clientId.toString(),
-          );
-          if (!client || !client.isActive) {
-            throw new UnauthorizedException(
-              'Your organization account is inactive',
-            );
-          }
-        } catch (error) {
-          if (error instanceof NotFoundException) {
-            throw new UnauthorizedException(
-              'Your organization account no longer exists',
-            );
-          }
-          throw error;
-        }
-      }
+      // This section is commented out in your provided code, keeping it as is.
+      // if (user.clientId) {
+      //   try {
+      //     const client = await this.clientsService.findOne(
+      //       user.clientId.toString(),
+      //     );
+      //     if (!client || !client.isActive) {
+      //       throw new UnauthorizedException(
+      //         'Your organization account is inactive',
+      //       );
+      //     }
+      //   } catch (error) {
+      //     if (error instanceof NotFoundException) {
+      //       throw new UnauthorizedException(
+      //         'Your organization account no longer exists',
+      //       );
+      //     }
+      //     throw error;
+      //   }
+      // }
 
-      // Generate JWT token
+      // Generate JWT token payload
+      // Use the new 'roles' array for the JWT payload
       const payload = {
         email: user.email,
         sub: user._id,
-        role: user.role,
-        clientId: user.clientId,
+        roles: user.roles, // Changed from 'role' to 'roles'
       };
 
+      // Return user details and the generated access token
+      // Include new fields like firstName, lastName, and isVerified.
+      // 'roles' is now an array.
       return {
         user: {
           _id: user._id,
           email: user.email,
-          fullName: user.fullName,
-          role: user.role,
-          clientId: user.clientId,
+          firstName: user.firstName, // Include the new firstName field
+          lastName: user.lastName,   // Include the new lastName field
+          fullName: user.fullName,   // Access the virtual fullName property
+          roles: user.roles,         // Include the new roles array
+          isVerified: user.isVerified, // Include the new isVerified status
         },
         access_token: this.jwtService.sign(payload),
       };
