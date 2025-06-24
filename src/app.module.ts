@@ -8,6 +8,9 @@ import { ClientContextMiddleware } from './common/middlewares/client-context.mid
 import { JwtClientGuard } from './auth/guards/jwt-client.guard';
 import { UsersModule } from './users/users.module';
 import { EmailModule } from './emails/emails.module';
+import { TicketModule } from './ticket/ticket.module';
+import { TicketTypeModule } from './ticket-type/ticket-type.module';
+import { EventModule } from './event/event.module';
 
 @Module({
   imports: [
@@ -16,7 +19,10 @@ import { EmailModule } from './emails/emails.module';
     JwtAuthModule, // Import JWT module first
     AuthModule,
     UsersModule,
-    EmailModule, // Ensure InsurancesModule is imported
+    EmailModule,
+    TicketModule,
+    TicketTypeModule,
+    EventModule, // Ensure InsurancesModule is imported
   ],
   providers: [
     // Register JwtClientGuard as a global guard
