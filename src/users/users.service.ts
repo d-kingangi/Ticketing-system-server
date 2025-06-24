@@ -1,4 +1,3 @@
-// src/users/services/users.service.ts (fixed sort type)
 import {
   Injectable,
   NotFoundException,
@@ -10,7 +9,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, SortOrder } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { UserDocument, UserRole } from 'src/auth/schema/user.schema';
-import { ClientsService } from 'src/clients/clients.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
@@ -23,7 +21,6 @@ export class UsersService {
 
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
-    private readonly clientsService: ClientsService,
   ) {}
 
   /**
@@ -32,10 +29,14 @@ export class UsersService {
   private mapToResponseDto(user: UserDocument): UserResponseDto {
     const response = {
       id: user._id.toString(),
-      fullName: user.fullName,
+      // Changed from fullName to individual firstName and lastName, and roles array
+      firstName: user.firstName,
+      lastName: user.lastName,
+      fullName: user.fullName, // Access the virtual fullName property
       email: user.email,
-      role: user.role,
-      clientId: user.clientId?.toString(),
+      roles: user.roles, // Changed from 'role' to 'roles' (array)
+      isVerified: user.isVerified, // Added new field
+      // clientId: user.clientId?.toString(), // Keep commented out if not in use
       isActive: user.isActive,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
@@ -48,15 +49,11 @@ export class UsersService {
    * Create a new user
    */
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
-    const { email, password, clientId, role } = createUserDto;
+    const { email, password, roles } = createUserDto; // Changed 'role' to 'roles'
 
     try {
-      // Check if the client exists (if specified)
-      if (clientId) {
-        await this.clientsService.findOne(clientId);
-      }
 
-      // Check if user already exists
+      // Check if user already exists with the given email
       const existingUser = await this.userModel.findOne({ email }).exec();
       if (existingUser) {
         throw new ConflictException('User with this email already exists');
@@ -65,10 +62,12 @@ export class UsersService {
       // Hash the password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Create new user
+      // Create new user, ensuring roles and isVerified are set
       const newUser = new this.userModel({
         ...createUserDto,
         password: hashedPassword,
+        roles: roles || [UserRole.CUSTOMER], // Default to CUSTOMER role if not provided
+        isVerified: false, // New users are not verified by default
       });
 
       await newUser.save();
@@ -80,6 +79,9 @@ export class UsersService {
     }
   }
 
+  /**
+   * Find all users with pagination and filtering
+   */
   /**
    * Find all users with pagination and filtering
    */
@@ -96,7 +98,7 @@ export class UsersService {
         limit = 10,
         fullName,
         email,
-        role,
+        roles, // Changed from 'role' to 'roles' (array)
         clientId,
         isActive,
         includeDeleted,
@@ -104,10 +106,12 @@ export class UsersService {
         sortDirection = -1,
       } = query;
 
-      // Build filter
+      // Build filter object
       const filter: any = {};
 
       if (fullName) {
+        // Searching by fullName (virtual) might not be efficient for large datasets.
+        // Consider searching by firstName or lastName if more precise filtering is needed.
         filter.fullName = { $regex: fullName, $options: 'i' };
       }
 
@@ -115,8 +119,9 @@ export class UsersService {
         filter.email = { $regex: email, $options: 'i' };
       }
 
-      if (role) {
-        filter.role = role;
+      // If roles array is provided and not empty, use $in operator for filtering
+      if (roles && roles.length > 0) {
+        filter.roles = { $in: roles };
       }
 
       if (clientId) {
@@ -127,18 +132,19 @@ export class UsersService {
         filter.isActive = isActive;
       }
 
-      // Only include deleted if explicitly requested
+      // Only include deleted users if explicitly requested
       if (!includeDeleted) {
         filter.isDeleted = false;
       }
 
-      // Execute query with pagination
+      // Calculate skip for pagination
       const skip = (page - 1) * limit;
 
-      // Fix for sort option type
+      // Prepare sort options
       const sortOptions: Record<string, SortOrder> = {};
       sortOptions[sortBy] = sortDirection as SortOrder;
 
+      // Execute query and count documents concurrently
       const [users, total] = await Promise.all([
         this.userModel
           .find(filter)
@@ -161,6 +167,7 @@ export class UsersService {
       throw error;
     }
   }
+
 
   /**
    * Count users by client and/or role
@@ -188,9 +195,12 @@ export class UsersService {
   /**
    * Find a user by ID
    */
+  /**
+   * Find a user by ID
+   */
   async findOne(id: string, clientId?: string): Promise<UserResponseDto> {
     try {
-      // Build filter based on clientId
+      // Build filter based on ID and optional clientId
       const filter: any = { _id: id, isDeleted: false };
 
       if (clientId) {
@@ -219,7 +229,7 @@ export class UsersService {
     clientId?: string,
   ): Promise<UserResponseDto> {
     try {
-      // Check if user exists
+      // Check if user exists based on ID and optional clientId
       const filter: any = { _id: id, isDeleted: false };
 
       if (clientId) {
@@ -232,7 +242,7 @@ export class UsersService {
         throw new NotFoundException(`User with ID ${id} not found`);
       }
 
-      // If updating email, check for uniqueness
+      // If email is being updated, check for uniqueness among other users
       if (updateUserDto.email && updateUserDto.email !== user.email) {
         const existingUser = await this.userModel
           .findOne({
@@ -248,20 +258,20 @@ export class UsersService {
         }
       }
 
-      // If updating client, check if it exists
-      if (
-        updateUserDto.clientId &&
-        updateUserDto.clientId !== user.clientId?.toString()
-      ) {
-        await this.clientsService.findOne(updateUserDto.clientId);
-      }
+      // If updating client, check if it exists - keep commented out if not in use
+      // if (
+      //   updateUserDto.clientId &&
+      //   updateUserDto.clientId !== user.clientId?.toString()
+      // ) {
+      //   await this.clientsService.findOne(updateUserDto.clientId);
+      // }
 
-      // If updating password, hash it
+      // If password is being updated, hash it
       if (updateUserDto.password) {
         updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
       }
 
-      // Update user
+      // Find and update the user, returning the new document
       const updatedUser = await this.userModel
         .findOneAndUpdate(filter, updateUserDto, { new: true })
         .exec();
@@ -272,6 +282,7 @@ export class UsersService {
       throw error;
     }
   }
+
 
   /**
    * Soft delete a user
