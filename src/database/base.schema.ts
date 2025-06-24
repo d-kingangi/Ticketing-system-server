@@ -3,12 +3,6 @@ import { Document } from 'mongoose';
 
 @Schema()
 export class BaseDocument extends Document {
-    @Prop({ default: true })
-    clientId: string;
-
-    @Prop({ default: true })
-    branchId: string;
-
     @Prop({ default: false })
     isDeleted: boolean;
 
