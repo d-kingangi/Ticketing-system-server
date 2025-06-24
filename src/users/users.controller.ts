@@ -1,4 +1,3 @@
-// src/users/controllers/users.controller.ts
 import {
   Controller,
   Get,
@@ -36,7 +35,7 @@ export class UsersController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN) // Only ADMIN can create users
   async create(
     @Body() createUserDto: CreateUserDto,
     @GetClient() clientId: string,
@@ -51,14 +50,13 @@ export class UsersController {
 
   @Get()
   @UseGuards(RolesGuard, ClientAccessGuard)
-  @Roles(UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE, UserRole.RECEPTIONIST)
+  @Roles(UserRole.ADMIN, UserRole.AGENT) // Assuming AGENT covers Doctor, Nurse, Receptionist
   async findAll(
     @Query() query: UserQueryDto,
     @GetClient() clientId: string,
-    @GetUser('role') userRole: UserRole,
+    @GetUser('roles') userRoles: UserRole[], // Changed from 'role' to 'roles' (array)
   ) {
-    // If user is not a system admin, enforce client isolation
-    if (userRole !== UserRole.ADMIN || clientId) {
+    if (!userRoles.includes(UserRole.ADMIN) || clientId) {
       query.clientId = clientId;
     }
 
@@ -88,18 +86,16 @@ export class UsersController {
     @Param('id') id: string,
     @GetClient() clientId: string,
     @GetUser('_id') userId: string,
-    @GetUser('role') userRole: UserRole,
+    @GetUser('roles') userRoles: UserRole[], // Changed from 'role' to 'roles' (array)
   ) {
     // Enforce client isolation and ownership
     // System admins can access any user
-    // Client admins can access any user in their client
-    // Other roles can only access their own user
+    // AGENTs can access any user within their client (e.g., patient data)
+    // Other roles (like CUSTOMER) can only access their own user data
     if (
-      userRole !== UserRole.ADMIN &&
-      userRole !== UserRole.DOCTOR &&
-      userRole !== UserRole.NURSE &&
-      userRole !== UserRole.RECEPTIONIST &&
-      id !== userId
+      !userRoles.includes(UserRole.ADMIN) &&
+      !userRoles.includes(UserRole.AGENT) && // Allow AGENT to access other users
+      id !== userId // If not admin/agent, must be accessing own ID
     ) {
       throw new BadRequestException('You can only access your own user data');
     }
@@ -114,19 +110,20 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
     @GetClient() clientId: string,
     @GetUser('_id') userId: string,
-    @GetUser('role') userRole: UserRole,
+    @GetUser('roles') userRoles: UserRole[], // Changed from 'role' to 'roles' (array)
   ) {
     // Enforce client isolation and ownership
     // System admins can update any user
-    // Client admins can update any user in their client
     // Other roles can only update their own user (and restricted fields)
-    if (userRole !== UserRole.ADMIN && id !== userId) {
+    // Check if userRoles includes ADMIN
+    if (!userRoles.includes(UserRole.ADMIN) && id !== userId) {
       throw new BadRequestException('You can only update your own user data');
     }
 
-    // Remove sensitive fields for non-admin users
-    if (userRole !== UserRole.ADMIN && id === userId) {
-      delete updateUserDto.role;
+    // Remove sensitive fields for non-admin users, even if they are updating themselves
+    // Check if userRoles includes ADMIN
+    if (!userRoles.includes(UserRole.ADMIN) && id === userId) {
+      delete updateUserDto.roles; // Changed from 'role' to 'roles'
       delete updateUserDto.isActive;
       delete updateUserDto.clientId;
     }
