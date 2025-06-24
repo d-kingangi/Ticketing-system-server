@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsBoolean,
   IsMongoId,
+  IsArray, // Import IsArray for validating array types
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { UserRole } from 'src/auth/schema/user.schema';
@@ -19,8 +20,9 @@ export class UserQueryDto {
   email?: string;
 
   @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
+  @IsArray() // Indicate that 'roles' is an array
+  @IsEnum(UserRole, { each: true }) // Validate each item in the array against UserRole enum
+  roles?: UserRole[]; // Changed from 'role' to 'roles' (array of UserRole)
 
   @IsOptional()
   @IsMongoId()
