@@ -1,4 +1,3 @@
-// src/users/dto/user-query.dto.ts
 import {
   IsOptional,
   IsString,
