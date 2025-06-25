@@ -50,7 +50,7 @@ export class UserResponseDto {
   @ApiProperty({ description: 'Timestamp of when the user account was last updated.' })
   updatedAt: Date;
 
-  @ApiPropertyOptional({ description: 'Optionaly pass the users organizationId.' })
-  organizationId?: Date;
+  @ApiPropertyOptional({ description: 'The ID of the organization the user belongs to (if any).' })
+  organizationId?: string;
 
 }
