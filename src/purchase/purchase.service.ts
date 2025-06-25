@@ -10,6 +10,7 @@ import { FindAllPurchasesQueryDto } from './dto/find-all-purchase-query.dto';
 import { PurchaseResponseDto } from './dto/purchase-response.dto';
 import { PurchaseDocument, PaymentStatus } from './entities/purchase.entity';
 import { PurchaseRepository } from './purchase.repository';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class PurchaseService {
@@ -19,7 +20,7 @@ export class PurchaseService {
     private readonly purchaseRepository: PurchaseRepository,
     private readonly eventService: EventService,
     private readonly ticketTypeService: TicketTypeService,
-    private readonly userService: UserService, // Assuming a UserService for buyer validation
+    private readonly usersService: UsersService, // Assuming a UserService for buyer validation
     // private readonly ticketService: TicketService, // TODO: Inject TicketService when implemented for ticket generation
   ) {}
 
@@ -101,7 +102,7 @@ export class PurchaseService {
     if (!Types.ObjectId.isValid(buyerId)) {
       throw new BadRequestException('Invalid buyer ID format.');
     }
-    const buyer = await this.userService.findOne(buyerId); // Assuming findOne in UserService
+    const buyer = await this.usersService.findOne(buyerId); // Assuming findOne in UserService
     if (!buyer) {
       throw new NotFoundException(`Buyer with ID "${buyerId}" not found.`);
     }
