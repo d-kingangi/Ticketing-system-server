@@ -1,3 +1,4 @@
+// event.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -13,8 +14,7 @@ import { EventDocument } from './entities/event.entity';
 import { EventResponseDto } from './dto/event-response.dto';
 import { FindAllEventsQueryDto } from './dto/find-all-events-query.dto';
 import { PaginatedResponseDto } from '../shared/dto/paginated-response.dto';
-import { OrganizationService } from 'src/organization/organization.service';
-// import { OrganizationService } from '../organization/organization.service'; // TODO: Uncomment when OrganizationService is available
+import { OrganizationService } from 'src/organization/organization.service'; // Assuming this is available
 
 @Injectable()
 export class EventService {
@@ -22,9 +22,9 @@ export class EventService {
 
   constructor(
     private readonly eventRepository: EventRepository,
-    // TODO: Uncomment the following line when OrganizationService is available
+    // Assuming OrganizationService is available and correctly imported/provided
     private readonly organizationService: OrganizationService,
-  ) { }
+  ) {}
 
   /**
    * Maps an EventDocument to a public-facing EventResponseDto.
@@ -38,7 +38,7 @@ export class EventService {
     return {
       id: event._id.toString(),
       userId: event.userId,
-      organizationId: event.organizationId,
+      organizationId: event.organizationId?.toString(), // Ensure organizationId is mapped as string
       title: event.title,
       description: event.description,
       organizer: event.organizer,
@@ -74,14 +74,17 @@ export class EventService {
       `User ${userId} attempting to create event "${createEventDto.title}" for organization ${organizationId}`,
     );
 
-    // TODO: When OrganizationService is available, verify the user is part of the organization.
-    // await this.organizationService.verifyUserInOrganization(userId, organizationId);
+    // Verify the organization exists and the user is part of it (if applicable)
+    // This assumes organizationService.verifyUserInOrganization exists and handles roles.
+    // For ADMINs, organizationId might be optional in DTO, but must be valid if provided.
+    // For AGENTs, organizationId must match their assigned organization.
+    await this.organizationService.verifyUserInOrganization(userId, organizationId);
 
     try {
       const eventData = {
         ...createEventDto,
         userId,
-        organizationId,
+        organizationId: new Types.ObjectId(organizationId), // Ensure it's an ObjectId
       };
 
       const newEvent = await this.eventRepository.create(eventData);
@@ -112,7 +115,7 @@ export class EventService {
 
     if (title) filter.title = { $regex: title, $options: 'i' };
     if (category) filter.category = category;
-    if (organizationId) filter.organizationId = organizationId;
+    if (organizationId) filter.organizationId = new Types.ObjectId(organizationId); // Filter by organizationId if provided
     if (status) filter.status = status;
 
     const sort = { [sortBy]: sortDirection === 'asc' ? 1 : -1 };
@@ -140,10 +143,14 @@ export class EventService {
   ): Promise<PaginatedResponseDto<EventResponseDto>> {
     this.logger.log(`Fetching events for organization ${organizationId} with query: ${JSON.stringify(queryDto)}`);
 
+    if (!Types.ObjectId.isValid(organizationId)) {
+      throw new BadRequestException('Invalid organization ID format.');
+    }
+
     const { page, limit, title, category, status, sortBy, sortDirection, includeDeleted } = queryDto;
 
     const filter: FilterQuery<EventDocument> = {
-      organizationId: organizationId, // Crucial: enforce organization ownership
+      organizationId: new Types.ObjectId(organizationId), // Crucial: enforce organization ownership
     };
 
     if (title) filter.title = { $regex: title, $options: 'i' };
@@ -175,7 +182,7 @@ export class EventService {
     }
 
     const event = await this.eventRepository.findOne({
-      _id: eventId,
+      _id: new Types.ObjectId(eventId), // Ensure ObjectId
       isPublic: true,
       isDeleted: false,
     });
@@ -187,30 +194,35 @@ export class EventService {
   }
 
   /**
-   * Finds a single event by its ID for a specific organization.
-   * This method is intended for authenticated agents/organizers.
+   * Finds a single event by its ID, ensuring it belongs to the specified organization.
+   * This method is intended for authorized access (e.g., by agents or for internal service calls).
    * @param eventId The ID of the event.
-   * @param organizationId The ID of the organization the event should belong to.
+   * @param organizationId The ID of the organization the event must belong to.
    * @param includeDeleted Whether to include soft-deleted events.
-   * @returns The found event.
+   * @returns The found event's public response DTO.
    * @throws BadRequestException if the ID format is invalid.
    * @throws NotFoundException if the event is not found or does not belong to the organization.
    */
-  async findOneByOrganization(
+  async findOne(
     eventId: string,
-    organizationId: string,
+    organizationId: string, // Now required for authorization
     includeDeleted: boolean = false,
   ): Promise<EventResponseDto> {
     this.logger.log(`Fetching event ${eventId} for organization ${organizationId}`);
     if (!Types.ObjectId.isValid(eventId)) {
       throw new BadRequestException('Invalid event ID format.');
     }
+    if (!Types.ObjectId.isValid(organizationId)) {
+      throw new BadRequestException('Invalid organization ID format.');
+    }
 
     const filter: FilterQuery<EventDocument> = {
-      _id: eventId,
-      organizationId: organizationId, // Crucial: enforce organization ownership
+      _id: new Types.ObjectId(eventId),
+      organizationId: new Types.ObjectId(organizationId), // Crucial: enforce organization ownership
     };
-    if (!includeDeleted) filter.isDeleted = false;
+    if (!includeDeleted) {
+      filter.isDeleted = false;
+    }
 
     const event = await this.eventRepository.findOne(filter);
 
@@ -235,20 +247,10 @@ export class EventService {
     organizationId: string,
   ): Promise<EventResponseDto> {
     this.logger.log(`User ${userId} attempting to update event ${eventId} for organization ${organizationId}`);
-    if (!Types.ObjectId.isValid(eventId)) {
-      throw new BadRequestException('Invalid event ID format.');
-    }
 
-    const event = await this.eventRepository.findById(eventId);
-    if (!event || event.isDeleted) {
-      throw new NotFoundException(`Event with ID "${eventId}" not found.`);
-    }
-
-    // Authorization Check: Ensure the event belongs to the user's organization.
-    if (event.organizationId !== organizationId) {
-      this.logger.warn(`User ${userId} from org ${organizationId} tried to update event ${eventId} owned by org ${event.organizationId}`);
-      throw new ForbiddenException('You do not have permission to update this event.');
-    }
+    // Use the findOne method to perform lookup and authorization check in one step.
+    // This ensures the event exists and belongs to the correct organization before proceeding.
+    await this.findOne(eventId, organizationId); // This will throw NotFound/BadRequest if not found/authorized
 
     const updateData = { ...updateEventDto, updatedBy: userId };
     const updatedEvent = await this.eventRepository.update(eventId, updateData);
@@ -270,20 +272,9 @@ export class EventService {
     organizationId: string,
   ): Promise<{ message: string }> {
     this.logger.log(`User ${userId} attempting to soft-delete event ${eventId} from organization ${organizationId}`);
-    if (!Types.ObjectId.isValid(eventId)) {
-      throw new BadRequestException('Invalid event ID format.');
-    }
 
-    const event = await this.eventRepository.findById(eventId);
-    if (!event || event.isDeleted) {
-      throw new NotFoundException(`Event with ID "${eventId}" not found or already deleted.`);
-    }
-
-    // Authorization Check
-    if (event.organizationId !== organizationId) {
-      this.logger.warn(`User ${userId} from org ${organizationId} tried to delete event ${eventId} owned by org ${event.organizationId}`);
-      throw new ForbiddenException('You do not have permission to delete this event.');
-    }
+    // Use the findOne method to ensure the event exists and belongs to the organization before deleting.
+    await this.findOne(eventId, organizationId); // This will throw NotFound/BadRequest if not found/authorized
 
     await this.eventRepository.softDelete(eventId, userId);
     this.logger.log(`Successfully soft-deleted event with ID: ${eventId}`);
@@ -296,9 +287,6 @@ export class EventService {
    * @param userId The ID of the user performing the action.
    * @param organizationId The organization ID of the user.
    * @returns The restored event.
-   * @throws BadRequestException if the ID format is invalid.
-   * @throws NotFoundException if the event is not found or not in a soft-deleted state.
-   * @throws ForbiddenException if the event does not belong to the user's organization.
    */
   async restore(
     eventId: string,
@@ -306,22 +294,9 @@ export class EventService {
     organizationId: string,
   ): Promise<EventResponseDto> {
     this.logger.log(`User ${userId} attempting to restore event ${eventId} for organization ${organizationId}`);
-    if (!Types.ObjectId.isValid(eventId)) {
-      throw new BadRequestException('Invalid event ID format.');
-    }
 
-    // First, find the event to perform authorization check
-    // Note: We explicitly look for a deleted event here.
-    const event = await this.eventRepository.findOne({ _id: eventId, isDeleted: true });
-    if (!event) {
-      throw new NotFoundException(`Event with ID "${eventId}" not found or is not in a soft-deleted state.`);
-    }
-
-    // Authorization Check
-    if (event.organizationId !== organizationId) {
-      this.logger.warn(`User ${userId} from org ${organizationId} tried to restore event ${eventId} owned by org ${event.organizationId}`);
-      throw new ForbiddenException('You do not have permission to restore this event.');
-    }
+    // Use findOne with includeDeleted=true to find the event and authorize in one step.
+    await this.findOne(eventId, organizationId, true); // This will throw NotFound/BadRequest if not found/authorized
 
     const restoredEvent = await this.eventRepository.restore(eventId, userId);
     this.logger.log(`Successfully restored event with ID: ${eventId}`);
@@ -333,8 +308,6 @@ export class EventService {
    * This method should typically be restricted to ADMIN roles.
    * @param eventId The ID of the event to permanently delete.
    * @returns A success message.
-   * @throws BadRequestException if the ID format is invalid.
-   * @throws NotFoundException if the event is not found.
    */
   async hardDelete(eventId: string): Promise<{ message: string }> {
     this.logger.log(`Attempting to permanently delete event with ID: ${eventId}`);
