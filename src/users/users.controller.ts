@@ -12,161 +12,246 @@ import {
   HttpStatus,
   BadRequestException,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
-import { GetClient } from 'src/auth/decorators/get-client.decorator';
-import { GetUser } from 'src/auth/decorators/get-user.decorator';
-import { Roles } from 'src/auth/decorators/roles.decorator';
-import { ClientAccessGuard } from 'src/auth/guards/client-access.guard';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
-import { OwnershipGuard } from 'src/auth/guards/ownership.guard';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
-import { UserRole } from 'src/auth/schema/user.schema';
-import { UsersService } from './users.service';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiParam,
+  ApiBody,
+} from '@nestjs/swagger';
+import { Types } from 'mongoose';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { UserRole } from '../auth/schema/user.schema';
+import { PaginatedResponseDto } from '../shared/dto/paginated-response.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { FindAllUsersQueryDto } from './dto/find-all-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { UserQueryDto } from './user-query.dto';
+import { UserResponseDto } from './dto/user-response.dto';
+import { UsersService } from './users.service';
 
+@ApiTags('Users') // Group endpoints under "Users" in Swagger UI
 @Controller('users')
-@UseGuards(JwtAuthGuard)
+@ApiBearerAuth() // Indicates that JWT authentication is required for all endpoints
+@UseGuards(JwtAuthGuard, RolesGuard) // Apply guards to all endpoints in this controller
 export class UsersController {
   private readonly logger = new Logger(UsersController.name);
 
   constructor(private readonly usersService: UsersService) {}
 
+  /**
+   * Creates a new user. This endpoint is restricted to administrators.
+   * It allows creating users with specific roles (e.g., AGENT, ADMIN).
+   */
   @Post()
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN) // Only ADMIN can create users
-  async create(
-    @Body() createUserDto: CreateUserDto,
-    @GetClient() clientId: string,
-  ) {
-    // If the request is from a client admin, ensure the user is created for their client
-    if (clientId) {
-      createUserDto.clientId = clientId;
-    }
-
+  @Roles(UserRole.ADMIN) // Only users with the ADMIN role can access this endpoint
+  @ApiOperation({ summary: 'Create a new user (Admin only)' })
+  @ApiResponse({
+    status: HttpStatus.CREATED,
+    description: 'The user has been successfully created.',
+    type: UserResponseDto,
+  })
+  @ApiResponse({
+    status: HttpStatus.CONFLICT,
+    description: 'A user with the provided email already exists.',
+  })
+  create(@Body() createUserDto: CreateUserDto): Promise<UserResponseDto> {
+    this.logger.log(`Admin attempting to create user: ${createUserDto.email}`);
+    // The service handles the creation logic, including password hashing.
     return this.usersService.create(createUserDto);
   }
 
+  /**
+   * Retrieves a paginated list of all users.
+   * This endpoint is restricted to administrators for user management purposes.
+   */
   @Get()
-  @UseGuards(RolesGuard, ClientAccessGuard)
-  @Roles(UserRole.ADMIN, UserRole.AGENT) // Assuming AGENT covers Doctor, Nurse, Receptionist
-  async findAll(
-    @Query() query: UserQueryDto,
-    @GetClient() clientId: string,
-    @GetUser('roles') userRoles: UserRole[], // Changed from 'role' to 'roles' (array)
-  ) {
-    if (!userRoles.includes(UserRole.ADMIN) || clientId) {
-      query.clientId = clientId;
-    }
-
+  @Roles(UserRole.ADMIN) // Only ADMINs can view the full list of users
+  @ApiOperation({ summary: 'Get all users with pagination and filtering (Admin only)' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'List of users retrieved successfully.',
+    type: PaginatedResponseDto<UserResponseDto>,
+  })
+  findAll(
+    @Query() query: FindAllUsersQueryDto,
+  ): Promise<PaginatedResponseDto<UserResponseDto>> {
+    // The service handles all filtering, sorting, and pagination logic.
     return this.usersService.findAll(query);
   }
 
-  @Get('count')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
-  async count(
-    @Query('clientId') clientId: string,
-    @Query('role') role: UserRole,
-    @GetClient() userClientId: string,
-    @GetUser('role') userRole: UserRole,
-  ) {
-    // If user is not a system admin, enforce client isolation
-    if (userRole !== UserRole.ADMIN || userClientId) {
-      clientId = userClientId;
-    }
-
-    return this.usersService.count(clientId, role);
+  /**
+   * Retrieves the profile of the currently authenticated user.
+   */
+  @Get('me')
+  @Roles(UserRole.ADMIN, UserRole.AGENT, UserRole.CUSTOMER) // Any authenticated user can get their own profile
+  @ApiOperation({ summary: 'Get the current authenticated user\'s profile' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'User profile retrieved successfully.',
+    type: UserResponseDto,
+  })
+  getMe(@GetUser('_id') userId: string): Promise<UserResponseDto> {
+    this.logger.log(`User ${userId} fetching their own profile.`);
+    // The findOne method is reused to get the user's own data.
+    return this.usersService.findOne(userId);
   }
 
+  /**
+   * Retrieves a single user by their ID.
+   * Restricted to administrators to view any user's profile.
+   */
   @Get(':id')
-  @UseGuards(RolesGuard, OwnershipGuard)
-  async findOne(
-    @Param('id') id: string,
-    @GetClient() clientId: string,
-    @GetUser('_id') userId: string,
-    @GetUser('roles') userRoles: UserRole[], // Changed from 'role' to 'roles' (array)
-  ) {
-    // Enforce client isolation and ownership
-    // System admins can access any user
-    // AGENTs can access any user within their client (e.g., patient data)
-    // Other roles (like CUSTOMER) can only access their own user data
-    if (
-      !userRoles.includes(UserRole.ADMIN) &&
-      !userRoles.includes(UserRole.AGENT) && // Allow AGENT to access other users
-      id !== userId // If not admin/agent, must be accessing own ID
-    ) {
-      throw new BadRequestException('You can only access your own user data');
+  @Roles(UserRole.ADMIN) // Only ADMINs can get any user by ID
+  @ApiOperation({ summary: 'Get a single user by ID (Admin only)' })
+  @ApiParam({ name: 'id', description: 'The ID of the user to retrieve.' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'User retrieved successfully.',
+    type: UserResponseDto,
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found.' })
+  findOne(@Param('id') id: string): Promise<UserResponseDto> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID format.');
     }
-
-    return this.usersService.findOne(id, clientId);
+    return this.usersService.findOne(id);
   }
 
+  /**
+   * Updates a user's information.
+   * - Admins can update any user's profile.
+   * - Customers and Agents can only update their own profile.
+   */
   @Patch(':id')
-  @UseGuards(RolesGuard, OwnershipGuard)
-  async update(
+  @Roles(UserRole.ADMIN, UserRole.AGENT, UserRole.CUSTOMER) // All roles can potentially update
+  @ApiOperation({ summary: 'Update a user\'s profile' })
+  @ApiParam({ name: 'id', description: 'The ID of the user to update.' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'User updated successfully.',
+    type: UserResponseDto,
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found.' })
+  @ApiResponse({
+    status: HttpStatus.FORBIDDEN,
+    description: 'You do not have permission to update this user.',
+  })
+  update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
-    @GetClient() clientId: string,
-    @GetUser('_id') userId: string,
-    @GetUser('roles') userRoles: UserRole[], // Changed from 'role' to 'roles' (array)
-  ) {
-    // Enforce client isolation and ownership
-    // System admins can update any user
-    // Other roles can only update their own user (and restricted fields)
-    // Check if userRoles includes ADMIN
-    if (!userRoles.includes(UserRole.ADMIN) && id !== userId) {
-      throw new BadRequestException('You can only update your own user data');
+    @GetUser('_id') authenticatedUserId: string,
+    @GetUser('roles') authenticatedUserRoles: UserRole[],
+  ): Promise<UserResponseDto> {
+    const isAdmin = authenticatedUserRoles.includes(UserRole.ADMIN);
+
+    // Authorization check:
+    // 1. An admin can update any user.
+    // 2. A non-admin can only update their own profile.
+    if (!isAdmin && id !== authenticatedUserId) {
+      throw new ForbiddenException('You can only update your own profile.');
     }
 
-    // Remove sensitive fields for non-admin users, even if they are updating themselves
-    // Check if userRoles includes ADMIN
-    if (!userRoles.includes(UserRole.ADMIN) && id === userId) {
-      delete updateUserDto.roles; // Changed from 'role' to 'roles'
+    // Field restriction for non-admins:
+    // Even when updating their own profile, non-admins cannot change their roles,
+    // verification status, or active status.
+    if (!isAdmin) {
+      delete updateUserDto.roles;
       delete updateUserDto.isActive;
-      delete updateUserDto.clientId;
+      delete updateUserDto.isVerified;
     }
 
-    return this.usersService.update(id, updateUserDto, clientId);
+    this.logger.log(`User ${authenticatedUserId} attempting to update user ${id}.`);
+    return this.usersService.update(id, updateUserDto);
   }
 
-  @Delete(':id')
-  @UseGuards(RolesGuard)
+  /**
+   * Soft-deletes a user. This is a recoverable action.
+   * Restricted to administrators.
+   */
+  @Delete(':id/soft')
   @Roles(UserRole.ADMIN)
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id') id: string, @GetClient() clientId: string) {
-    // Only admins can delete users
-    return this.usersService.remove(id, clientId);
+  @ApiOperation({ summary: 'Soft delete a user (Admin only)' })
+  @ApiParam({ name: 'id', description: 'The ID of the user to soft-delete.' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'User successfully soft-deleted.',
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found.' })
+  softDelete(@Param('id') id: string): Promise<{ message: string }> {
+    return this.usersService.softDelete(id);
   }
 
+  /**
+   * Restores a soft-deleted user.
+   * Restricted to administrators.
+   */
   @Post(':id/restore')
-  @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
-  async restore(@Param('id') id: string, @GetClient() clientId: string) {
-    // Only admins can restore users
-    return this.usersService.restore(id, clientId);
+  @ApiOperation({ summary: 'Restore a soft-deleted user (Admin only)' })
+  @ApiParam({ name: 'id', description: 'The ID of the user to restore.' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'User successfully restored.',
+    type: UserResponseDto,
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found.' })
+  restore(@Param('id') id: string): Promise<UserResponseDto> {
+    return this.usersService.restore(id);
   }
 
-  @Get('client/:clientId')
-  @UseGuards(RolesGuard)
+  /**
+   * Permanently deletes a user. This action is irreversible.
+   * Restricted to administrators. Use with extreme caution.
+   */
+  @Delete(':id/hard')
   @Roles(UserRole.ADMIN)
-  async findByClient(
-    @Param('clientId') clientId: string,
-    @Query() query: UserQueryDto,
-    @GetClient() userClientId: string,
-    @GetUser('role') userRole: UserRole,
-  ) {
-    // If user is not a system admin, enforce client isolation
-    if (userRole !== UserRole.ADMIN && userClientId) {
-      if (clientId !== userClientId) {
-        throw new BadRequestException(
-          'You can only access users from your own client',
-        );
-      }
-    }
+  @ApiOperation({ summary: 'Permanently delete a user (Admin only)' })
+  @ApiParam({ name: 'id', description: 'The ID of the user to permanently delete.' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'User successfully permanently deleted.',
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found.' })
+  hardDelete(@Param('id') id: string): Promise<{ message: string }> {
+    return this.usersService.hardDelete(id);
+  }
 
-    query.clientId = clientId;
-    return this.usersService.findAll(query);
+  /**
+   * Assigns roles to a user.
+   * Restricted to administrators.
+   */
+  @Patch(':id/roles')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Assign roles to a user (Admin only)' })
+  @ApiParam({ name: 'id', description: 'The ID of the user to assign roles to.' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        roles: {
+          type: 'array',
+          items: { type: 'string', enum: Object.values(UserRole) },
+        },
+      },
+      required: ['roles'],
+    },
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'User roles successfully updated.',
+    type: UserResponseDto,
+  })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'User not found.' })
+  assignRoles(
+    @Param('id') id: string,
+    @Body('roles') roles: UserRole[],
+  ): Promise<UserResponseDto> {
+    return this.usersService.assignRoles(id, roles);
   }
 }
