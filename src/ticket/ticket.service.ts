@@ -116,7 +116,7 @@ export class TicketService {
 
     // 1. Validate existence of related entities
     const [event, ticketType, purchase, owner] = await Promise.all([
-      this.eventService.findOne(createTicketDto.eventId),
+      this.eventService.findOnePublic(createTicketDto.eventId),
       this.ticketTypeService.findOne(createTicketDto.ticketTypeId),
       this.purchaseService.findOne(createTicketDto.purchaseId), // Assuming findOne in PurchaseService
       this.userService.findOne(createTicketDto.ownerId), // Assuming findOne in UserService
