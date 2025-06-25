@@ -1,26 +1,24 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, HttpStatus, Logger, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, HttpStatus, Logger, Query, UseGuards, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { EventService } from './event.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
-import { ApiBearerAuth, ApiOperation, ApiBody, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { GetUser } from 'src/auth/decorators/get-user.decorator';
-import { Roles } from 'src/auth/guards/client-access.guard';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
-import { UserRole } from 'src/auth/schema/user.schema';
-import { PaginatedResponseDto } from 'src/shared/dto/paginated-response.dto';
+import { ApiBearerAuth, ApiOperation, ApiBody, ApiResponse, ApiQuery, ApiParam, ApiTags } from '@nestjs/swagger';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator'; // Corrected import path for Roles decorator
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { UserRole } from '../auth/schema/user.schema';
+import { PaginatedResponseDto } from '../shared/dto/paginated-response.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { FindAllEventsQueryDto } from './dto/find-all-events-query.dto';
+import { GetOrganizationId } from '../auth/decorators/get-organization-id.decorator'; // Import the new decorator
 
-@Controller('event')
+@ApiTags('Events') // Group endpoints under "Events" in Swagger UI
+@Controller('events') // Changed to plural for consistency
 @ApiBearerAuth() // Requires authentication for all endpoints
 @UseGuards(JwtAuthGuard)
 export class EventController {
-  /**
-   * Logger instance for logging messages in the EventController.
-   * This logger will be used to log information, warnings, and errors related to event operations.
-   */
- private readonly logger = new Logger(EventController.name);
+  private readonly logger = new Logger(EventController.name);
 
   constructor(private readonly eventService: EventService) {}
 
@@ -38,17 +36,27 @@ export class EventController {
     @Body() createEventDto: CreateEventDto,
     @GetUser('_id') userId: string, // Inject the ID of the authenticated user
     @GetUser('roles') userRoles: UserRole[],
+    @GetOrganizationId() authenticatedOrganizationId: string, // Get organizationId from the authenticated user's token
   ): Promise<EventResponseDto> {
-    // Check if admin and allow them to create events for other organizations.
-    // If not admin, enforce creating event for the organization from the user's token.
-    let organizationId = createEventDto.organizationId;
-    if (!userRoles.includes(UserRole.ADMIN)) {
-      // Enforce orgId on the agent when creating events if the user is not an admin.
-      organizationId = createEventDto.organizationId;
+    let targetOrganizationId: string;
+
+    // Admins can create events for any organization (if organizationId is provided in DTO)
+    // Agents can only create events for their own organization.
+    if (userRoles.includes(UserRole.ADMIN)) {
+      targetOrganizationId = createEventDto.organizationId || authenticatedOrganizationId;
+    } else {
+      // For agents, enforce that the event is created for their own organization
+      if (!authenticatedOrganizationId) {
+        throw new BadRequestException('Agent must be associated with an organization to create events.');
+      }
+      if (createEventDto.organizationId && createEventDto.organizationId !== authenticatedOrganizationId) {
+        throw new ForbiddenException('Agents can only create events for their own organization.');
+      }
+      targetOrganizationId = authenticatedOrganizationId;
     }
 
     // Call the service to create the event
-    return this.eventService.create(createEventDto, userId, organizationId);
+    return this.eventService.create(createEventDto, userId, targetOrganizationId);
   }
 
   @Get('public')
@@ -77,9 +85,9 @@ export class EventController {
   })
   async findAllByOrganization(
     @Query() query: FindAllEventsQueryDto,
-    @GetUser('organizationId') organizationId: string, // Inject orgId from token
+    @GetOrganizationId() organizationId: string, // Inject orgId from token
   ): Promise<PaginatedResponseDto<EventResponseDto>> {
-    // If not admin, enforce data access for the organization from the user's token
+    // The service will filter by the organizationId provided by the decorator.
     return this.eventService.findAllByOrganization(organizationId, query);
   }
 
@@ -113,11 +121,12 @@ export class EventController {
     type: EventResponseDto,
   })
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Event not found.' })
-  async findOneByOrganization(
+  async findOne( // Renamed from findOneByOrganization for consistency with service
     @Param('id') id: string,
     @Query('includeDeleted') includeDeleted: boolean = false,
-    @GetUser('organizationId') organizationId: string, // Enforce access to the user's organization only
+    @GetOrganizationId() organizationId: string, // Enforce access to the user's organization only
   ): Promise<EventResponseDto> {
+    // The service method `findOne` now handles the organization check.
     return this.eventService.findOneByOrganization(id, organizationId, includeDeleted);
   }
 
@@ -141,8 +150,9 @@ export class EventController {
     @Param('id') id: string,
     @Body() updateEventDto: UpdateEventDto,
     @GetUser('_id') userId: string,
-    @GetUser('organizationId') organizationId: string,
+    @GetOrganizationId() organizationId: string, // Use the new decorator
   ): Promise<EventResponseDto> {
+    // The service method `update` now handles the organization check.
     return this.eventService.update(id, updateEventDto, userId, organizationId);
   }
 
@@ -160,8 +170,9 @@ export class EventController {
   async softDelete(
     @Param('id') id: string,
     @GetUser('_id') userId: string,
-    @GetUser('organizationId') organizationId: string,
+    @GetOrganizationId() organizationId: string, // Use the new decorator
   ): Promise<{ message: string }> {
+    // The service method `softDelete` now handles the organization check.
     return this.eventService.softDelete(id, userId, organizationId);
   }
 
@@ -183,8 +194,9 @@ export class EventController {
   async restore(
     @Param('id') id: string,
     @GetUser('_id') userId: string,
-    @GetUser('organizationId') organizationId: string,
+    @GetOrganizationId() organizationId: string, // Use the new decorator
   ): Promise<EventResponseDto> {
+    // The service method `restore` now handles the organization check.
     return this.eventService.restore(id, userId, organizationId);
   }
 
