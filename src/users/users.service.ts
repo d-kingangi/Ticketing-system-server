@@ -5,353 +5,405 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model, SortOrder } from 'mongoose';
 import * as bcrypt from 'bcrypt';
-import { UserDocument, UserRole } from 'src/auth/schema/user.schema';
+import { UserDocument, UserRole } from '../auth/schema/user.schema'; // Corrected import path for UserDocument and UserRole
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
-import { User } from './entities/user.entity';
-import { UserQueryDto } from './user-query.dto';
+import { UserRepository } from './users.repository'; // Import the new UserRepository
+import { FindAllUsersQueryDto } from './dto/find-all-users-query.dto'; // Use the comprehensive query DTO
+import { PaginatedResponseDto } from '../shared/dto/paginated-response.dto'; // Assuming you have a PaginatedResponseDto
+import { FilterQuery, Types } from 'mongoose';
 
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
   constructor(
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    // Inject the UserRepository instead of the raw Mongoose Model
+    private readonly userRepository: UserRepository,
   ) {}
 
   /**
-   * Map user document to user response DTO (excluding sensitive info)
+   * Maps a UserDocument to a public-facing UserResponseDto.
+   * This method ensures sensitive information like passwords are not exposed.
+   * @param user The user document from the database.
+   * @returns The mapped DTO.
    */
   private mapToResponseDto(user: UserDocument): UserResponseDto {
-    const response = {
+    if (!user) {
+      return null;
+    }
+    return {
       id: user._id.toString(),
-      // Changed from fullName to individual firstName and lastName, and roles array
       firstName: user.firstName,
       lastName: user.lastName,
       fullName: user.fullName, // Access the virtual fullName property
       email: user.email,
-      roles: user.roles, // Changed from 'role' to 'roles' (array)
-      isVerified: user.isVerified, // Added new field
-      // clientId: user.clientId?.toString(), // Keep commented out if not in use
+      phone: user.phone,
+      profileUrl: user.profileUrl,
+      roles: user.roles,
       isActive: user.isActive,
+      isVerified: user.isVerified,
+      isDeleted: user.isDeleted,
+      deletedAt: user.deletedAt,
+      lastLoginAt: user.lastLoginAt,
+      settings: user.settings,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
-
-    return response;
   }
 
   /**
-   * Create a new user
+   * Creates a new user in the system.
+   * Hashes the password before saving and ensures email uniqueness.
+   * @param createUserDto DTO containing user creation data.
+   * @returns The created user's public response DTO.
+   * @throws ConflictException if a user with the given email already exists.
    */
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
-    const { email, password, roles } = createUserDto; // Changed 'role' to 'roles'
+    const { email, password, roles, firstName, lastName } = createUserDto;
+    this.logger.log(`Attempting to create user: ${email}`);
 
-    try {
-
-      // Check if user already exists with the given email
-      const existingUser = await this.userModel.findOne({ email }).exec();
-      if (existingUser) {
-        throw new ConflictException('User with this email already exists');
-      }
-
-      // Hash the password
-      const hashedPassword = await bcrypt.hash(password, 10);
-
-      // Create new user, ensuring roles and isVerified are set
-      const newUser = new this.userModel({
-        ...createUserDto,
-        password: hashedPassword,
-        roles: roles || [UserRole.CUSTOMER], // Default to CUSTOMER role if not provided
-        isVerified: false, // New users are not verified by default
-      });
-
-      await newUser.save();
-
-      return this.mapToResponseDto(newUser);
-    } catch (error) {
-      this.logger.error(`Failed to create user: ${error.message}`, error.stack);
-      throw error;
+    // Check if user already exists with the given email using the repository
+    const existingUser = await this.userRepository.findByEmail(email, true); // Include deleted to prevent re-registration
+    if (existingUser) {
+      throw new ConflictException('User with this email already exists.');
     }
+
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create new user document using the repository's create method
+    const newUser = await this.userRepository.create({
+      firstName,
+      lastName,
+      email: email.toLowerCase(), // Store email in lowercase
+      password: hashedPassword,
+      roles: roles || [UserRole.CUSTOMER], // Default to CUSTOMER role if not provided
+      isActive: createUserDto.isActive ?? true, // Use provided isActive or default to true
+      isVerified: false, // New users are not verified by default
+      // Other fields like phone, profileUrl, settings will be undefined if not provided in DTO
+    });
+
+    this.logger.log(`User ${newUser._id} created successfully.`);
+    return this.mapToResponseDto(newUser);
   }
 
   /**
-   * Find all users with pagination and filtering
+   * Finds all users with pagination and filtering capabilities.
+   * @param query DTO containing pagination, sorting, and filtering options.
+   * @returns A paginated list of user response DTOs.
    */
-  /**
-   * Find all users with pagination and filtering
-   */
-  async findAll(query: UserQueryDto): Promise<{
-    data: UserResponseDto[];
-    total: number;
-    page: number;
-    limit: number;
-    pages: number;
-  }> {
-    try {
-      const {
-        page = 1,
-        limit = 10,
-        fullName,
-        email,
-        roles, // Changed from 'role' to 'roles' (array)
-        clientId,
-        isActive,
-        includeDeleted,
-        sortBy = 'createdAt',
-        sortDirection = -1,
-      } = query;
+  async findAll(
+    query: FindAllUsersQueryDto,
+  ): Promise<PaginatedResponseDto<UserResponseDto>> {
+    this.logger.log(`Fetching all users with query: ${JSON.stringify(query)}`);
 
-      // Build filter object
-      const filter: any = {};
+    const {
+      page = 1,
+      limit = 10,
+      firstName,
+      lastName,
+      email,
+      roles,
+      isActive,
+      isVerified,
+      includeDeleted = false,
+      sortBy = 'createdAt',
+      sortDirection = 'desc',
+      createdAtGte,
+      createdAtLte,
+    } = query;
 
-      if (fullName) {
-        // Searching by fullName (virtual) might not be efficient for large datasets.
-        // Consider searching by firstName or lastName if more precise filtering is needed.
-        filter.fullName = { $regex: fullName, $options: 'i' };
-      }
+    // Build filter object for the repository
+    const filter: FilterQuery<UserDocument> = {};
 
-      if (email) {
-        filter.email = { $regex: email, $options: 'i' };
-      }
-
-      // If roles array is provided and not empty, use $in operator for filtering
-      if (roles && roles.length > 0) {
-        filter.roles = { $in: roles };
-      }
-
-      if (clientId) {
-        filter.clientId = clientId;
-      }
-
-      if (isActive !== undefined) {
-        filter.isActive = isActive;
-      }
-
-      // Only include deleted users if explicitly requested
-      if (!includeDeleted) {
-        filter.isDeleted = false;
-      }
-
-      // Calculate skip for pagination
-      const skip = (page - 1) * limit;
-
-      // Prepare sort options
-      const sortOptions: Record<string, SortOrder> = {};
-      sortOptions[sortBy] = sortDirection as SortOrder;
-
-      // Execute query and count documents concurrently
-      const [users, total] = await Promise.all([
-        this.userModel
-          .find(filter)
-          .sort(sortOptions)
-          .skip(skip)
-          .limit(limit)
-          .exec(),
-        this.userModel.countDocuments(filter).exec(),
-      ]);
-
-      return {
-        data: users.map((user) => this.mapToResponseDto(user)),
-        total,
-        page: +page,
-        limit: +limit,
-        pages: Math.ceil(total / limit),
-      };
-    } catch (error) {
-      this.logger.error(`Failed to find users: ${error.message}`, error.stack);
-      throw error;
+    if (firstName) {
+      filter.firstName = { $regex: firstName, $options: 'i' }; // Case-insensitive partial match
     }
-  }
-
-
-  /**
-   * Count users by client and/or role
-   */
-  async count(clientId?: string, role?: UserRole): Promise<{ count: number }> {
-    try {
-      const filter: any = { isDeleted: false };
-
-      if (clientId) {
-        filter.clientId = clientId;
-      }
-
-      if (role) {
-        filter.role = role;
-      }
-
-      const count = await this.userModel.countDocuments(filter).exec();
-      return { count };
-    } catch (error) {
-      this.logger.error(`Failed to count users: ${error.message}`, error.stack);
-      throw error;
+    if (lastName) {
+      filter.lastName = { $regex: lastName, $options: 'i' }; // Case-insensitive partial match
     }
+    if (email) {
+      filter.email = { $regex: email, $options: 'i' }; // Case-insensitive partial match
+    }
+    if (roles && roles.length > 0) {
+      filter.roles = { $in: roles };
+    }
+    if (isActive !== undefined) {
+      filter.isActive = isActive;
+    }
+    if (isVerified !== undefined) {
+      filter.isVerified = isVerified;
+    }
+    // Only include deleted users if explicitly requested
+    if (!includeDeleted) {
+      filter.isDeleted = false;
+    }
+
+    // Date range filtering for createdAt
+    if (createdAtGte || createdAtLte) {
+      filter.createdAt = {};
+      if (createdAtGte) {
+        filter.createdAt.$gte = new Date(createdAtGte);
+      }
+      if (createdAtLte) {
+        filter.createdAt.$lte = new Date(createdAtLte);
+      }
+    }
+
+    // Prepare sort options
+    const sort = { [sortBy]: sortDirection === 'asc' ? 1 : -1 };
+
+    // Use the repository's findWithPagination method
+    const paginatedResult = await this.userRepository.findWithPagination(
+      filter,
+      page,
+      limit,
+      sort,
+    );
+
+    return new PaginatedResponseDto({
+      data: paginatedResult.data.map(this.mapToResponseDto),
+      total: paginatedResult.total,
+      currentPage: paginatedResult.page,
+      totalPages: paginatedResult.pages,
+    });
   }
 
   /**
-   * Find a user by ID
+   * Counts users based on a given filter.
+   * @param filter The filter query to apply for counting.
+   * @returns An object containing the count of users.
    */
-  /**
-   * Find a user by ID
-   */
-  async findOne(id: string, clientId?: string): Promise<UserResponseDto> {
-    try {
-      // Build filter based on ID and optional clientId
-      const filter: any = { _id: id, isDeleted: false };
-
-      if (clientId) {
-        filter.clientId = clientId;
-      }
-
-      const user = await this.userModel.findOne(filter).exec();
-
-      if (!user) {
-        throw new NotFoundException(`User with ID ${id} not found`);
-      }
-
-      return this.mapToResponseDto(user);
-    } catch (error) {
-      this.logger.error(`Failed to find user: ${error.message}`, error.stack);
-      throw error;
-    }
+  async count(filter: FilterQuery<UserDocument> = {}): Promise<{ count: number }> {
+    this.logger.log(`Counting users with filter: ${JSON.stringify(filter)}`);
+    // Use the repository's count method
+    const count = await this.userRepository.count(filter);
+    return { count };
   }
 
   /**
-   * Update a user
+   * Finds a single user by their ID.
+   * @param id The ID of the user to find.
+   * @returns The user's public response DTO.
+   * @throws NotFoundException if the user is not found.
+   * @throws BadRequestException if the ID format is invalid.
    */
-  async update(
-    id: string,
-    updateUserDto: UpdateUserDto,
-    clientId?: string,
-  ): Promise<UserResponseDto> {
-    try {
-      // Check if user exists based on ID and optional clientId
-      const filter: any = { _id: id, isDeleted: false };
-
-      if (clientId) {
-        filter.clientId = clientId;
-      }
-
-      const user = await this.userModel.findOne(filter).exec();
-
-      if (!user) {
-        throw new NotFoundException(`User with ID ${id} not found`);
-      }
-
-      // If email is being updated, check for uniqueness among other users
-      if (updateUserDto.email && updateUserDto.email !== user.email) {
-        const existingUser = await this.userModel
-          .findOne({
-            email: updateUserDto.email,
-            _id: { $ne: id },
-          })
-          .exec();
-
-        if (existingUser) {
-          throw new ConflictException(
-            `User with email ${updateUserDto.email} already exists`,
-          );
-        }
-      }
-
-      // If updating client, check if it exists - keep commented out if not in use
-      // if (
-      //   updateUserDto.clientId &&
-      //   updateUserDto.clientId !== user.clientId?.toString()
-      // ) {
-      //   await this.clientsService.findOne(updateUserDto.clientId);
-      // }
-
-      // If password is being updated, hash it
-      if (updateUserDto.password) {
-        updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
-      }
-
-      // Find and update the user, returning the new document
-      const updatedUser = await this.userModel
-        .findOneAndUpdate(filter, updateUserDto, { new: true })
-        .exec();
-
-      return this.mapToResponseDto(updatedUser);
-    } catch (error) {
-      this.logger.error(`Failed to update user: ${error.message}`, error.stack);
-      throw error;
+  async findOne(id: string): Promise<UserResponseDto> {
+    this.logger.log(`Finding user with ID: ${id}`);
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID format.');
     }
-  }
 
-
-  /**
-   * Soft delete a user
-   */
-  async remove(id: string, clientId?: string): Promise<void> {
-    try {
-      // Build filter based on clientId
-      const filter: any = { _id: id, isDeleted: false };
-
-      if (clientId) {
-        filter.clientId = clientId;
-      }
-
-      const user = await this.userModel.findOne(filter).exec();
-
-      if (!user) {
-        throw new NotFoundException(`User with ID ${id} not found`);
-      }
-
-      // Soft delete
-      await this.userModel
-        .findByIdAndUpdate(id, {
-          isDeleted: true,
-          deletedAt: new Date(),
-        })
-        .exec();
-    } catch (error) {
-      this.logger.error(`Failed to remove user: ${error.message}`, error.stack);
-      throw error;
-    }
+    // Use the repository's findById method, which handles NotFoundException
+    const user = await this.userRepository.findById(id);
+    return this.mapToResponseDto(user);
   }
 
   /**
-   * Restore a soft-deleted user
+   * Finds a user by their email address.
+   * This method is useful for internal lookups, e.g., during authentication.
+   * @param email The email address of the user.
+   * @param includeDeleted Optional: Whether to include soft-deleted users.
+   * @returns The user document, or null if not found.
    */
-  async restore(id: string, clientId?: string): Promise<UserResponseDto> {
-    try {
-      // Build filter based on clientId
-      const filter: any = { _id: id, isDeleted: true };
+  async findByEmail(email: string, includeDeleted: boolean = false): Promise<UserDocument | null> {
+    this.logger.log(`Finding user by email: ${email}`);
+    // Use the repository's findByEmail method
+    return this.userRepository.findByEmail(email, includeDeleted);
+  }
 
-      if (clientId) {
-        filter.clientId = clientId;
-      }
+  /**
+   * Updates an existing user's information.
+   * Handles password hashing if the password is updated and checks for email uniqueness.
+   * @param id The ID of the user to update.
+   * @param updateUserDto DTO containing the updated user data.
+   * @returns The updated user's public response DTO.
+   * @throws NotFoundException if the user is not found.
+   * @throws ConflictException if the updated email already exists for another user.
+   * @throws BadRequestException if the ID format is invalid.
+   */
+  async update(id: string, updateUserDto: UpdateUserDto): Promise<UserResponseDto> {
+    this.logger.log(`Updating user with ID: ${id}`);
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
 
-      const user = await this.userModel.findOne(filter).exec();
+    // Find the existing user using the repository
+    const user = await this.userRepository.findById(id);
 
-      if (!user) {
-        throw new NotFoundException(`Deleted user with ID ${id} not found`);
-      }
-
-      // Restore user
-      const restoredUser = await this.userModel
-        .findByIdAndUpdate(
-          id,
-          {
-            isDeleted: false,
-            deletedAt: null,
-          },
-          { new: true },
-        )
-        .exec();
-
-      return this.mapToResponseDto(restoredUser);
-    } catch (error) {
-      this.logger.error(
-        `Failed to restore user: ${error.message}`,
-        error.stack,
+    // If email is being updated, check for uniqueness among other users
+    if (updateUserDto.email && updateUserDto.email.toLowerCase() !== user.email) {
+      const existingUserWithNewEmail = await this.userRepository.findByEmail(
+        updateUserDto.email,
+        true, // Check against all users, including deleted ones
       );
-      throw error;
+      if (existingUserWithNewEmail && existingUserWithNewEmail._id.toString() !== id) {
+        throw new ConflictException(`User with email ${updateUserDto.email} already exists.`);
+      }
     }
+
+    // If password is being updated, hash it
+    if (updateUserDto.password) {
+      updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+    }
+
+    // Use the repository's update method to perform the update
+    const updatedUser = await this.userRepository.update(id, updateUserDto);
+
+    this.logger.log(`User ${id} updated successfully.`);
+    return this.mapToResponseDto(updatedUser);
+  }
+
+  /**
+   * Soft-deletes a user by setting `isDeleted` to true and `deletedAt` to the current date.
+   * @param id The ID of the user to soft-delete.
+   * @returns A message indicating successful soft deletion.
+   * @throws NotFoundException if the user is not found or already soft-deleted.
+   * @throws BadRequestException if the ID format is invalid.
+   */
+  async softDelete(id: string): Promise<{ message: string }> {
+    this.logger.log(`Attempting to soft-delete user with ID: ${id}`);
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+
+    // Use the repository's softDelete method
+    const deletedUser = await this.userRepository.softDelete(id);
+    if (!deletedUser) {
+      throw new NotFoundException(`User with ID "${id}" not found or already deleted.`);
+    }
+
+    this.logger.log(`Successfully soft-deleted user with ID: ${id}.`);
+    return { message: `User with ID "${id}" has been successfully soft-deleted.` };
+  }
+
+  /**
+   * Restores a soft-deleted user by setting `isDeleted` to false and `deletedAt` to null.
+   * @param id The ID of the user to restore.
+   * @returns The restored user's public response DTO.
+   * @throws NotFoundException if the user is not found or not soft-deleted.
+   * @throws BadRequestException if the ID format is invalid.
+   */
+  async restore(id: string): Promise<UserResponseDto> {
+    this.logger.log(`Attempting to restore user with ID: ${id}`);
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+
+    // Use the repository's restore method
+    const restoredUser = await this.userRepository.restore(id);
+    if (!restoredUser) {
+      throw new NotFoundException(`Deleted user with ID "${id}" not found or not in a soft-deleted state.`);
+    }
+
+    this.logger.log(`Successfully restored user with ID: ${id}.`);
+    return this.mapToResponseDto(restoredUser);
+  }
+
+  /**
+   * Permanently deletes a user record from the database. Use with extreme caution.
+   * This method should typically be restricted to ADMIN roles.
+   * @param id The ID of the user to permanently delete.
+   * @returns A message indicating successful permanent deletion.
+   * @throws NotFoundException if the user is not found.
+   * @throws BadRequestException if the ID format is invalid.
+   */
+  async hardDelete(id: string): Promise<{ message: string }> {
+    this.logger.log(`Attempting to permanently delete user with ID: ${id}`);
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+
+    // Use the repository's delete method
+    const deletedUser = await this.userRepository.delete(id);
+    if (!deletedUser) {
+      throw new NotFoundException(`User with ID "${id}" not found for permanent deletion.`);
+    }
+
+    this.logger.log(`Successfully permanently deleted user with ID: ${id}.`);
+    return { message: `User with ID "${id}" has been permanently deleted.` };
+  }
+
+  /**
+   * Updates a user's last login timestamp.
+   * @param id The ID of the user.
+   * @returns The updated user's public response DTO.
+   * @throws NotFoundException if the user is not found.
+   * @throws BadRequestException if the ID format is invalid.
+   */
+  async updateLastLogin(id: string): Promise<UserResponseDto> {
+    this.logger.log(`Updating last login for user: ${id}`);
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+    const updatedUser = await this.userRepository.updateLastLogin(id);
+    if (!updatedUser) {
+      throw new NotFoundException(`User with ID "${id}" not found.`);
+    }
+    return this.mapToResponseDto(updatedUser);
+  }
+
+  /**
+   * Updates a user's email verification status.
+   * @param id The ID of the user.
+   * @param isVerified The new verification status.
+   * @returns The updated user's public response DTO.
+   * @throws NotFoundException if the user is not found.
+   * @throws BadRequestException if the ID format is invalid.
+   */
+  async updateVerificationStatus(id: string, isVerified: boolean): Promise<UserResponseDto> {
+    this.logger.log(`Updating verification status for user ${id} to ${isVerified}`);
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+    const updatedUser = await this.userRepository.updateVerificationStatus(id, isVerified);
+    if (!updatedUser) {
+      throw new NotFoundException(`User with ID "${id}" not found.`);
+    }
+    return this.mapToResponseDto(updatedUser);
+  }
+
+  /**
+   * Updates a user's password.
+   * @param id The ID of the user.
+   * @param newPassword The new plain text password to hash and set.
+   * @returns The updated user's public response DTO.
+   * @throws NotFoundException if the user is not found.
+   * @throws BadRequestException if the ID format is invalid.
+   */
+  async updatePassword(id: string, newPassword: string): Promise<UserResponseDto> {
+    this.logger.log(`Updating password for user: ${id}`);
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const updatedUser = await this.userRepository.updatePassword(id, hashedPassword);
+    if (!updatedUser) {
+      throw new NotFoundException(`User with ID "${id}" not found.`);
+    }
+    return this.mapToResponseDto(updatedUser);
+  }
+
+  /**
+   * Assigns new roles to a user.
+   * @param id The ID of the user.
+   * @param roles The array of new roles to assign.
+   * @returns The updated user's public response DTO.
+   * @throws NotFoundException if the user is not found.
+   * @throws BadRequestException if the ID format is invalid.
+   */
+  async assignRoles(id: string, roles: UserRole[]): Promise<UserResponseDto> {
+    this.logger.log(`Assigning roles to user ${id}: ${roles.join(', ')}`);
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+    const updatedUser = await this.userRepository.assignRoles(id, roles);
+    if (!updatedUser) {
+      throw new NotFoundException(`User with ID "${id}" not found.`);
+    }
+    return this.mapToResponseDto(updatedUser);
   }
 }
