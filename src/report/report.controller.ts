@@ -1,15 +1,20 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, BadRequestException, HttpStatus, Logger } from '@nestjs/common';
+import { Controller, Get, Param, BadRequestException, HttpStatus, Logger, UseGuards } from '@nestjs/common';
 import { ReportService } from './report.service';
-import { ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Types } from 'mongoose';
-import { GetUser } from 'src/auth/decorators/get-user.decorator';
-import { Roles } from 'src/auth/guards/client-access.guard';
-import { UserRole } from 'src/auth/schema/user.schema';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator'; // Corrected import path for Roles decorator
+import { UserRole } from '../auth/schema/user.schema';
 import { SalesSummaryReportDto } from './dto/sales-summary-report.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { GetOrganizationId } from '../auth/decorators/get-organization-id.decorator'; // Import the new decorator
 
-@Controller('report')
+@ApiTags('Reports')
+@Controller('reports') // Changed to plural for consistency
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ReportController {
-
   private readonly logger = new Logger(ReportController.name);
 
   constructor(private readonly reportService: ReportService) {}
@@ -41,7 +46,7 @@ export class ReportController {
   })
   async getSalesSummary(
     @Param('eventId') eventId: string,
-    @GetUser('organizationId') organizationId: string, // Get organizationId from the authenticated user's token.
+    @GetOrganizationId() organizationId: string, // Use the new decorator to get organizationId
   ): Promise<SalesSummaryReportDto> {
     this.logger.log(
       `Request for sales summary for event ${eventId} from organization ${organizationId}`,
@@ -49,6 +54,7 @@ export class ReportController {
     if (!Types.ObjectId.isValid(eventId)) {
       throw new BadRequestException('Invalid event ID format.');
     }
+    // Pass the organizationId to the service for authorization within the service layer
     return this.reportService.getSalesSummary(eventId, organizationId);
   }
 }
