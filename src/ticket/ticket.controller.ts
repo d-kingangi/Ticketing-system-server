@@ -1,24 +1,23 @@
+// ticket.controller.ts
 import { Controller, Get, Post, Body, Patch, Param, Delete, HttpStatus, Logger, Query, UseGuards } from '@nestjs/common';
 import { TicketService } from './ticket.service';
-import { CreateTicketDto } from './dto/create-ticket.dto';
-import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
-import { GetUser } from 'src/auth/decorators/get-user.decorator';
-import { Roles } from 'src/auth/guards/client-access.guard';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
-import { UserRole } from 'src/auth/schema/user.schema';
-import { PaginatedResponseDto } from 'src/shared/dto/paginated-response.dto';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator'; // Corrected import path for Roles decorator
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { UserRole } from '../auth/schema/user.schema';
+import { PaginatedResponseDto } from '../shared/dto/paginated-response.dto';
 import { FindAllTicketsQueryDto } from './dto/find-all-ticket-query.dto';
 import { TicketResponseDto } from './dto/ticket-response.dto';
 import { TicketStatus } from './entities/ticket.entity';
+import { GetOrganizationId } from '../auth/decorators/get-organization-id.decorator'; // Import the new decorator
 
 @Controller('tickets') // Changed to plural for RESTful consistency
 @ApiBearerAuth() // Indicates that JWT authentication is required for all endpoints in this controller
 @UseGuards(JwtAuthGuard)
 export class TicketController {
     private readonly logger = new Logger(TicketController.name);
-
 
   constructor(private readonly ticketService: TicketService) {}
 
@@ -46,7 +45,7 @@ export class TicketController {
     @Query() query: FindAllTicketsQueryDto,
     @GetUser('_id') userId: string,
     @GetUser('roles') userRoles: UserRole[],
-    @GetUser('organizationId') organizationId: string,
+    @GetOrganizationId() organizationId: string, // Use the new decorator
   ): Promise<PaginatedResponseDto<TicketResponseDto>> {
     let authUserId: string | undefined;
     let authOrgId: string | undefined;
@@ -60,7 +59,6 @@ export class TicketController {
 
     return this.ticketService.findAll(query, authUserId, authOrgId);
   }
-
 
   /**
    * Retrieves a single ticket by its ID.
@@ -87,7 +85,7 @@ export class TicketController {
     @Param('id') id: string,
     @GetUser('_id') userId: string,
     @GetUser('roles') userRoles: UserRole[],
-    @GetUser('organizationId') organizationId: string,
+    @GetOrganizationId() organizationId: string, // Use the new decorator
   ): Promise<TicketResponseDto> {
     let authUserId: string | undefined;
     let authOrgId: string | undefined;
@@ -129,7 +127,7 @@ export class TicketController {
   })
   async findByTicketCode(
     @Param('ticketCode') ticketCode: string,
-    @GetUser('organizationId') organizationId: string, // Agents can only query within their organization
+    @GetOrganizationId() organizationId: string, // Use the new decorator
     @GetUser('roles') userRoles: UserRole[],
   ): Promise<TicketResponseDto> {
     let authOrgId: string | undefined;
