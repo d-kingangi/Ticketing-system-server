@@ -14,7 +14,6 @@ import {
 } from '@nestjs/common';
 import { PurchaseService } from './purchase.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
-import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -23,15 +22,16 @@ import {
   ApiQuery,
   ApiParam,
 } from '@nestjs/swagger';
-import { GetUser } from 'src/auth/decorators/get-user.decorator';
-import { Roles } from 'src/auth/decorators/roles.decorator';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
-import { RolesGuard } from 'src/auth/guards/roles.guard';
-import { UserRole } from 'src/auth/schema/user.schema';
-import { PaginatedResponseDto } from 'src/shared/dto/paginated-response.dto';
+import { GetUser } from '../auth/decorators/get-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator'; // Corrected import path for Roles decorator
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { UserRole } from '../auth/schema/user.schema';
+import { PaginatedResponseDto } from '../shared/dto/paginated-response.dto';
 import { PurchaseResponseDto } from './dto/purchase-response.dto';
 import { PaymentStatus } from './entities/purchase.entity';
 import { FindAllPurchasesQueryDto } from './dto/find-all-purchase-query.dto';
+import { GetOrganizationId } from '../auth/decorators/get-organization-id.decorator'; // Import the new decorator
 
 @Controller('purchases') // Changed to plural for RESTful consistency
 @ApiBearerAuth() // Indicates that JWT authentication is required for all endpoints in this controller
@@ -100,7 +100,7 @@ export class PurchaseController {
     @Query() query: FindAllPurchasesQueryDto,
     @GetUser('_id') userId: string,
     @GetUser('roles') userRoles: UserRole[],
-    @GetUser('organizationId') organizationId: string,
+    @GetOrganizationId() organizationId: string, // Use the new decorator
   ): Promise<PaginatedResponseDto<PurchaseResponseDto>> {
     let authUserId: string | undefined;
     let authOrgId: string | undefined;
@@ -140,7 +140,7 @@ export class PurchaseController {
     @Param('id') id: string,
     @GetUser('_id') userId: string,
     @GetUser('roles') userRoles: UserRole[],
-    @GetUser('organizationId') organizationId: string,
+    @GetOrganizationId() organizationId: string, // Use the new decorator
   ): Promise<PurchaseResponseDto> {
     let authUserId: string | undefined;
     let authOrgId: string | undefined;
@@ -247,9 +247,10 @@ export class PurchaseController {
     @Param('id') id: string,
     @Body() body: { amount: number; reason: string },
     @GetUser('_id') userId: string,
-    @GetUser('organizationId') organizationId: string,
+    @GetOrganizationId() organizationId: string, // Use the new decorator
   ): Promise<PurchaseResponseDto> {
     // First, verify the agent has permission to refund this purchase
+    // The findOne method in PurchaseService will handle the organization check
     await this.purchaseService.findOne(id, undefined, organizationId);
     return this.purchaseService.refundPurchase(
       id,
