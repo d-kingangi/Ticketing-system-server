@@ -1,6 +1,6 @@
 // user.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type UserDocument = User & Document;
 
@@ -22,6 +22,9 @@ export class User {
 
   @Prop({ required: true, trim: true })
   lastName: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Organization', required: false }) // Make it optional for ADMINs or initial setup
+  organizationId?: Types.ObjectId;
 
   // Virtual property to get the full name for convenience
   get fullName(): string {
