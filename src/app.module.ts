@@ -13,6 +13,7 @@ import { TicketTypeModule } from './ticket-type/ticket-type.module';
 import { EventModule } from './event/event.module';
 import { OrganizationModule } from './organization/organization.module';
 import { PurchaseModule } from './purchase/purchase.module';
+import { ReportModule } from './report/report.module';
 
 @Module({
   imports: [
@@ -26,7 +27,8 @@ import { PurchaseModule } from './purchase/purchase.module';
     TicketTypeModule,
     EventModule,
     OrganizationModule,
-    PurchaseModule, // Ensure InsurancesModule is imported
+    PurchaseModule,
+    ReportModule, // Ensure InsurancesModule is imported
   ],
   providers: [
     // Register JwtClientGuard as a global guard
