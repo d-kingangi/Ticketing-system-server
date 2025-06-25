@@ -1,1 +1,1 @@
-export class User {}
+export { User } from '../../auth/schema/user.schema';
