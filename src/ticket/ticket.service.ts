@@ -14,6 +14,7 @@ import { TicketRepository } from './ticket.repository';
 import { nanoid } from 'nanoid';
 // Utility for QR code generation (example, you might use a dedicated library or service)
 import * as QRCode from 'qrcode';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class TicketService {
@@ -23,7 +24,7 @@ export class TicketService {
     private readonly ticketRepository: TicketRepository,
     private readonly eventService: EventService,
     private readonly ticketTypeService: TicketTypeService,
-    private readonly userService: UserService,
+    private readonly userService: UsersService,
     private readonly purchaseService: PurchaseService, // Used for validation and linking
   ) {}
 
