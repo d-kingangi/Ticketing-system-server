@@ -13,6 +13,7 @@ import { EventDocument } from './entities/event.entity';
 import { EventResponseDto } from './dto/event-response.dto';
 import { FindAllEventsQueryDto } from './dto/find-all-events-query.dto';
 import { PaginatedResponseDto } from '../shared/dto/paginated-response.dto';
+import { OrganizationService } from 'src/organization/organization.service';
 // import { OrganizationService } from '../organization/organization.service'; // TODO: Uncomment when OrganizationService is available
 
 @Injectable()
@@ -22,7 +23,7 @@ export class EventService {
   constructor(
     private readonly eventRepository: EventRepository,
     // TODO: Uncomment the following line when OrganizationService is available
-    // private readonly organizationService: OrganizationService,
+    private readonly organizationService: OrganizationService,
   ) { }
 
   /**
