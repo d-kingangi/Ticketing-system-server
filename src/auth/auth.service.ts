@@ -85,7 +85,7 @@ export class AuthService {
       // Send welcome email (don't await to avoid blocking the registration response).
       // Use the virtual 'fullName' property from the newUser object for the email.
       this.emailsService
-        .sendWelcomeEmail(email, newUser.fullName, clientId)
+        .sendWelcomeEmail(email, newUser.fullName,)
         .catch((error) => {
           this.logger.error(
             `Failed to send welcome email: ${error.message}`,
