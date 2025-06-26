@@ -35,9 +35,9 @@ export class RegisterDto {
   @IsString()
   profileUrl?: string;
 
-  @IsOptional()
-  @IsMongoId()
-  clientId?: string;
+  // @IsOptional()
+  // @IsMongoId()
+  // clientId?: string;
 
   @IsOptional()
   @IsEnum(UserRole)
