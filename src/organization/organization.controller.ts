@@ -4,13 +4,13 @@ import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { ApiBearerAuth, ApiOperation, ApiBody, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { GetUser } from 'src/auth/decorators/get-user.decorator';
-import { Roles } from 'src/auth/guards/client-access.guard';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/guards/roles.guard';
 import { UserRole } from 'src/auth/schema/user.schema';
 import { PaginatedResponseDto } from 'src/shared/dto/paginated-response.dto';
 import { FindAllOrganizationsQueryDto } from './dto/find-all-organization.dto';
 import { OrganizationResponseDto } from './dto/organization-response.dto';
+import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @Controller('organizations') // Changed to plural for RESTful consistency
 @ApiBearerAuth() // Indicates that JWT authentication is required for all endpoints in this controller
