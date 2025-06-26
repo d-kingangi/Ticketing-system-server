@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
@@ -13,6 +14,8 @@ import { OrganizationDocument } from './entities/organization.entity';
 import { PaginatedResponseDto } from 'src/shared/dto/paginated-response.dto'; // Assuming this DTO exists
 import { OrganizationResponseDto } from './dto/organization-response.dto';
 import { FindAllOrganizationsQueryDto } from './dto/find-all-organization.dto';
+import { UsersService } from 'src/users/users.service';
+import { UserRole } from 'src/auth/schema/user.schema';
 
 @Injectable()
 export class OrganizationService {
@@ -20,6 +23,7 @@ export class OrganizationService {
 
   constructor(
     private readonly organizationRepository: OrganizationRepository,
+        private readonly usersService: UsersService, // Injected UsersService
   ) {}
 
   /**
@@ -59,6 +63,60 @@ export class OrganizationService {
       updatedAt: organization.updatedAt,
       updatedBy: organization.updatedBy,
     };
+  }
+
+  /**
+   * Verifies if a user is authorized to perform actions within a specific organization.
+   * This method handles authorization based on user roles and their association with the organization.
+   * - System ADMINs can access any valid organization.
+   * - AGENTs (and other organization-bound roles) must belong to the specified organization.
+   * @param userId The ID of the user to verify.
+   * @param organizationId The ID of the organization the user is trying to access.
+   * @throws BadRequestException if user or organization IDs are invalid.
+   * @throws NotFoundException if the user or organization does not exist.
+   * @throws ForbiddenException if the user is not authorized for the organization.
+   */
+  async verifyUserInOrganization(userId: string, organizationId: string): Promise<void> {
+    this.logger.log(`Verifying user ${userId} for organization ${organizationId}`);
+
+    // 1. Validate ID formats
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid user ID format.');
+    }
+    if (!Types.ObjectId.isValid(organizationId)) {
+      throw new BadRequestException('Invalid organization ID format.');
+    }
+
+    // 2. Fetch the user to check roles and their assigned organizationId
+    // The usersService.findOne method returns a UserResponseDto which includes organizationId
+    const user = await this.usersService.findOne(userId);
+    if (!user) {
+      throw new NotFoundException(`User with ID "${userId}" not found.`);
+    }
+
+    // 3. Fetch the organization to ensure it exists and is not deleted
+    const organization = await this.organizationRepository.findById(organizationId);
+    if (!organization || organization.isDeleted) {
+      throw new NotFoundException(`Organization with ID "${organizationId}" not found or deleted.`);
+    }
+
+    // 4. Authorization Logic based on roles
+    // System-wide ADMINs have access to any valid organization.
+    if (user.roles.includes(UserRole.ADMIN)) {
+      this.logger.debug(`User ${userId} is an ADMIN, granting access to organization ${organizationId}.`);
+      return; // ADMINs are implicitly authorized for any existing organization
+    }
+
+    // For non-ADMIN roles (e.g., AGENT, CUSTOMER if they were to manage org-specific resources),
+    // their assigned organizationId must match the target organizationId.
+    // This ensures that an agent from Org A cannot access resources of Org B.
+    if (user.organizationId?.toString() !== organizationId) {
+      this.logger.warn(`User ${userId} (roles: ${user.roles.join(', ')}) attempted to access organization ${organizationId}, but is associated with ${user.organizationId}.`);
+      throw new ForbiddenException(`User ${userId} is not authorized to access organization ${organizationId}.`);
+    }
+
+    // If the user's organizationId matches, they are authorized for this organization.
+    this.logger.debug(`User ${userId} is authorized for organization ${organizationId}.`);
   }
 
   /**
