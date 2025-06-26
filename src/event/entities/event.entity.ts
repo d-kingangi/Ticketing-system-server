@@ -29,7 +29,7 @@ export class Event extends BaseDocument { // Extend BaseDocument
     organizer: string;
 
     @Prop({ required: true })
-    category: string;
+    categoryId: string;
 
     @Prop({
         type: {
