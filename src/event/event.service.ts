@@ -40,7 +40,7 @@ export class EventService {
       title: event.title,
       description: event.description,
       organizer: event.organizer,
-      category: event.category,
+      categoryId: event.categoryId,
       location: event.location,
       startDateTime: event.startDateTime,
       endDateTime: event.endDateTime,
