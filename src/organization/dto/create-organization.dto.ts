@@ -133,7 +133,7 @@ export class CreateOrganizationDto {
     @ApiPropertyOptional({ enum: OrganizationStatus, description: 'Current operational status of the organization', example: OrganizationStatus.PENDING_APPROVAL, default: OrganizationStatus.PENDING_APPROVAL })
     @IsOptional()
     @IsEnum(OrganizationStatus)
-    status?: OrganizationStatus = OrganizationStatus.PENDING_APPROVAL;
+    status?: OrganizationStatus = OrganizationStatus.ACTIVE;
 
     @ApiPropertyOptional({ description: 'Boolean flag to quickly enable/disable the organization', example: true, default: true })
     @IsOptional()
