@@ -19,7 +19,7 @@ export class EventResponseDto {
   description: string;
 
   @ApiProperty()
-  organizer: string;
+  organizers: string[];
 
   @ApiProperty()
   categoryId: string;
@@ -38,6 +38,20 @@ export class EventResponseDto {
 
   @ApiPropertyOptional({ type: [String] })
   galleryImages?: string[];
+
+  /**
+   * Optional social media links for the event.
+   * This is an object where keys are social media platform names (e.g., 'twitter', 'facebook')
+   * and values are their corresponding URLs.
+   */
+  @ApiPropertyOptional({
+    description: 'Optional social media links for the event (key-value pairs).',
+    example: { twitter: 'https://twitter.com/event_handle', instagram: 'https://instagram.com/event_page' },
+    type: 'object', // Specify type as object for Swagger
+    additionalProperties: { type: 'string' }, // Indicate that properties can have string values
+  })
+  socialMediaLinks?: Record<string, string>; // New field to match the schema
+
 
   @ApiProperty({ enum: EventStatus })
   status: EventStatus;
