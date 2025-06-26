@@ -127,7 +127,7 @@ export class EventController {
     @GetOrganizationId() organizationId: string, // Enforce access to the user's organization only
   ): Promise<EventResponseDto> {
     // The service method `findOne` now handles the organization check.
-    return this.eventService.findOneByOrganization(id, organizationId, includeDeleted);
+    return this.eventService.findOne(id, organizationId, includeDeleted);
   }
 
   @Patch(':id')
