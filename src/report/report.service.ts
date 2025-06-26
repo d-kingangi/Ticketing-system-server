@@ -36,7 +36,7 @@ export class ReportService {
     }
 
     // First, validate that the event exists and belongs to the organization.
-    const event = await this.eventService.findOneByOrganization(eventId, organizationId);
+    const event = await this.eventService.findOne(eventId, organizationId);
     if (!event) {
       throw new NotFoundException(
         `Event with ID "${eventId}" not found or not part of your organization.`,
