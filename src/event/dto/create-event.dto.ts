@@ -12,6 +12,7 @@ import {
   Min,
   IsArray,
   ValidateNested,
+  IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { EventStatus } from '../entities/event.entity'; // Assuming event.entity.ts is in the same directory
@@ -96,6 +97,23 @@ export class CreateEventDto {
   @IsArray()
   @IsUrl({}, { each: true }) // Ensures each element in the array is a valid URL
   galleryImages?: string[];
+
+  /**
+   * New: Optional social media links for the event.
+   * This is a flexible object where keys are social media platforms (e.g., 'twitter', 'facebook')
+   * and values are their corresponding URLs.
+   */
+  @ApiPropertyOptional({
+    description: 'Optional social media links for the event (key-value pairs)',
+    example: { twitter: 'https://twitter.com/event', facebook: 'https://facebook.com/event' },
+    type: 'object', // Specify type as object for Swagger
+    additionalProperties: { type: 'string' }, // Indicate that properties can have string values
+  })
+  @IsOptional()
+  @IsObject() // Validates that the value is an object
+  // You might add more specific validation here if needed, e.g., for URL format within the object
+  socialMediaLinks?: Record<string, string>; // New field to match the schema
+
 
   @ApiPropertyOptional({
     enum: EventStatus,
