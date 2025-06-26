@@ -1,4 +1,3 @@
-// event.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -22,9 +21,8 @@ export class EventService {
 
   constructor(
     private readonly eventRepository: EventRepository,
-    // Assuming OrganizationService is available and correctly imported/provided
     private readonly organizationService: OrganizationService,
-  ) {}
+  ) { }
 
   /**
    * Maps an EventDocument to a public-facing EventResponseDto.
@@ -74,10 +72,8 @@ export class EventService {
       `User ${userId} attempting to create event "${createEventDto.title}" for organization ${organizationId}`,
     );
 
-    // Verify the organization exists and the user is part of it (if applicable)
-    // This assumes organizationService.verifyUserInOrganization exists and handles roles.
-    // For ADMINs, organizationId might be optional in DTO, but must be valid if provided.
-    // For AGENTs, organizationId must match their assigned organization.
+    // Verify the user is authorized for the given organization.
+    // This method will throw an exception if the user is not authorized or if IDs are invalid.
     await this.organizationService.verifyUserInOrganization(userId, organizationId);
 
     try {
