@@ -25,8 +25,8 @@ export class Event extends BaseDocument { // Extend BaseDocument
     @Prop({ required: true })
     description: string;
 
-    @Prop({ required: true })
-    organizer: string;
+    @Prop({ type: [String], required: true })
+    organizers: string[];
 
     @Prop({ required: true })
     categoryId: string;
@@ -58,6 +58,18 @@ export class Event extends BaseDocument { // Extend BaseDocument
 
     @Prop({ type: [String], required: false })
     galleryImages?: string[];
+
+    /**
+     * New: An optional field for social media links.
+     * This is a flexible key-value store for various social platforms.
+     * Example: { "twitter": "https://twitter.com/event", "facebook": "https://facebook.com/event" }
+     */
+    @Prop({
+        type: Object,
+        required: false,
+        default: {},
+    })
+    socialMediaLinks?: Record<string, string>;
 
     @Prop({ type: String, enum: EventStatus, default: EventStatus.DRAFT })
     status: EventStatus;
