@@ -6,13 +6,14 @@ import { Purchase, PurchaseSchema } from './entities/purchase.entity'; // Import
 import { PurchaseRepository } from './purchase.repository'; // Import PurchaseRepository
 import { EventModule } from '../event/event.module'; // Import EventModule as PurchaseService depends on EventService
 import { TicketTypeModule } from 'src/ticket-type/ticket-type.module';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Purchase.name, schema: PurchaseSchema }]),
     EventModule,
     TicketTypeModule,
-    UserModule,
+    UsersModule,
   ],
   controllers: [PurchaseController],
   providers: [
