@@ -52,10 +52,10 @@ export class CreateEventDto {
   @IsNotEmpty()
   organizer: string;
 
-  @ApiProperty({ description: 'Category of the event', example: 'Technology' })
+  @ApiProperty({ description: 'Category id of the event', example: 'Technology' })
   @IsString()
   @IsNotEmpty()
-  category: string;
+  categoryId: string;
 
   @ApiProperty({ description: 'Location details of the event' })
   @Type(() => LocationDto) // Important for nested DTOs to enable validation
