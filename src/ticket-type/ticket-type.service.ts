@@ -165,7 +165,7 @@ export class TicketTypeService {
 
     // 2. Verify Event exists and belongs to the specified organization
     // This call ensures the event exists and the organizationId in the DTO is valid for that event.
-    const event = await this.eventService.findOneByOrganization(
+    const event = await this.eventService.findOne(
       createTicketTypeDto.eventId,
       createTicketTypeDto.organizationId,
       false, // Do not include deleted events
