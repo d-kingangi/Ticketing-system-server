@@ -39,13 +39,14 @@ export class EventService {
       organizationId: event.organizationId?.toString(), // Ensure organizationId is mapped as string
       title: event.title,
       description: event.description,
-      organizer: event.organizer,
+      organizers: event.organizers,
       categoryId: event.categoryId,
       location: event.location,
       startDateTime: event.startDateTime,
       endDateTime: event.endDateTime,
       featuredImage: event.featuredImage,
       galleryImages: event.galleryImages,
+      socialMediaLinks: event.socialMediaLinks, // Ensure this is included if it exists
       status: event.status,
       isPublic: event.isPublic,
       maxAttendees: event.maxAttendees,
