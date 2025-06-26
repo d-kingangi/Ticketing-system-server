@@ -22,7 +22,7 @@ export class EventResponseDto {
   organizer: string;
 
   @ApiProperty()
-  category: string;
+  categoryId: string;
 
   @ApiProperty({ type: LocationDto })
   location: LocationDto;
