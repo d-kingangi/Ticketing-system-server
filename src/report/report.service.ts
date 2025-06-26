@@ -113,7 +113,7 @@ export class ReportService {
     return {
       totalRevenue: parseFloat(totalRevenue.toFixed(2)),
       totalTicketsSold,
-      currency: event.currency, // Get currency from the event details.
+      currency: event?.currency, // Get currency from the event details.
       salesByTicketType,
     };
   }
