@@ -12,7 +12,6 @@ import {
   IsOptional,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { SupportedCurrencies } from '../../ticket-type/entities/ticket-type.entity'; // Import SupportedCurrencies
 
 // Nested DTO for individual items within a purchase
 export class PurchaseItemDto {
@@ -26,14 +25,9 @@ export class PurchaseItemDto {
   @Min(1)
   @IsNotEmpty()
   quantity: number;
-
-  // unitPrice, discountApplied, discountDetails are calculated by the backend, not provided by the client.
 }
 
 export class CreatePurchaseDto {
-  // buyerId will be derived from the authenticated user, not provided by the client.
-  // organizationId will be derived from the event, not provided by the client.
-
   @ApiProperty({ description: 'The ID of the event for which tickets are being purchased.', example: '60c72b2f9b1d4c001c8e4a01' })
   @IsMongoId()
   @IsNotEmpty()
@@ -50,28 +44,40 @@ export class CreatePurchaseDto {
   @Type(() => PurchaseItemDto)
   tickets: PurchaseItemDto[];
 
-  // totalAmount and currency will be calculated and verified by the backend, not provided by the client.
-  // paymentStatus will be set to PENDING by the backend.
-
   @ApiProperty({ description: 'The payment method chosen by the buyer (e.g., "M-Pesa", "Card", "PayPal").', example: 'M-Pesa' })
   @IsString()
   @IsNotEmpty()
   paymentMethod: string;
 
-  // paymentDetails (transactionId, paymentDate, etc.) will be populated by the backend after payment processing.
-
-  @ApiPropertyOptional({ description: 'The IP address of the buyer (can be captured by backend).', example: '192.168.1.1' })
+  @ApiPropertyOptional({
+    description: 'An optional discount code to apply to the purchase.',
+    example: 'EVENT2024',
+  })
   @IsOptional()
   @IsString()
-  ipAddress?: string;
+  @IsNotEmpty()
+  discountCode?: string;
 
-  @ApiPropertyOptional({ description: 'The User-Agent string of the buyer\'s device (can be captured by backend).', example: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' })
-  @IsOptional()
-  @IsString()
-  userAgent?: string;
-
-  @ApiPropertyOptional({ description: 'Any additional notes from the buyer.', example: 'Please ensure seats are together.' })
+  @ApiPropertyOptional({ description: 'Any additional notes from the buyer.' })
   @IsOptional()
   @IsString()
   notes?: string;
+
+
+  // paymentDetails (transactionId, paymentDate, etc.) will be populated by the backend after payment processing.
+
+  // @ApiPropertyOptional({ description: 'The IP address of the buyer (can be captured by backend).', example: '192.168.1.1' })
+  // @IsOptional()
+  // @IsString()
+  // ipAddress?: string;
+
+  // @ApiPropertyOptional({ description: 'The User-Agent string of the buyer\'s device (can be captured by backend).', example: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' })
+  // @IsOptional()
+  // @IsString()
+  // userAgent?: string;
+
+  // @ApiPropertyOptional({ description: 'Any additional notes from the buyer.', example: 'Please ensure seats are together.' })
+  // @IsOptional()
+  // @IsString()
+  // notes?: string;
 }
