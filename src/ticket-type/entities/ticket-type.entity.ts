@@ -7,11 +7,6 @@ export enum SupportedCurrencies {
     USD = 'USD',
 }
 
-export enum DiscountType {
-    NONE = 'none',
-    FIXED_AMOUNT = 'fixed_amount',
-    PERCENTAGE = 'percentage',
-}
 
 export type TicketTypeDocument = HydratedDocument<TicketType>;
 
@@ -71,20 +66,20 @@ export class TicketType extends BaseDocument {
     @Prop({ min: 1 })
     purchaseLimitPerUser?: number;
 
-    @Prop({ type: String, enum: DiscountType, default: DiscountType.NONE })
-    discountType: DiscountType;
+    // @Prop({ type: String, enum: DiscountType, default: DiscountType.NONE })
+    // discountType: DiscountType;
 
-    @Prop({ type: Number, min: 0, default: 0 })
-    discountValue: number;
+    // @Prop({ type: Number, min: 0, default: 0 })
+    // discountValue: number;
 
-    @Prop({ trim: true })
-    discountCode?: string;
+    // @Prop({ trim: true })
+    // discountCode?: string;
 
-    @Prop({ type: Number, min: 1 })
-    minTicketsForDiscount?: number;
+    // @Prop({ type: Number, min: 1 })
+    // minTicketsForDiscount?: number;
 
-    @Prop({ type: Number, min: 0 })
-    maxDiscountAmount?: number;
+    // @Prop({ type: Number, min: 0 })
+    // maxDiscountAmount?: number;
 
     // --- Inherited from BaseDocument ---
     // isDeleted: boolean;
@@ -100,5 +95,4 @@ TicketTypeSchema.index({ eventId: 1 });
 TicketTypeSchema.index({ organizationId: 1 });
 TicketTypeSchema.index({ salesStartDate: 1, salesEndDate: 1 });
 TicketTypeSchema.index({ isActive: 1 });
-TicketTypeSchema.index({ category: 1 });
 
