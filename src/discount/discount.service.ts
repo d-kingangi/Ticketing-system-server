@@ -27,7 +27,7 @@ export class DiscountService {
     private readonly eventService: EventService,
     private readonly organizationService: OrganizationService,
     private readonly ticketTypeService: TicketTypeService,
-  ) {}
+  ) { }
 
   /**
    * Maps a DiscountDocument to a public-facing DiscountResponseDto.
@@ -83,6 +83,7 @@ export class DiscountService {
 
     // 3. If specific ticket types are provided, validate they belong to the event.
     if (applicableTicketTypeIds && applicableTicketTypeIds.length > 0) {
+      // Fetch all ticket types for the event to validate against.
       const ticketTypes = await this.ticketTypeService.findAll({ eventId }, organizationId);
       const eventTicketTypeIds = new Set(ticketTypes.data.map(tt => tt.id));
       for (const id of applicableTicketTypeIds) {
@@ -235,5 +236,30 @@ export class DiscountService {
     // match the `applicableTicketTypeIds` on the discount.
     // For now, we just return the valid discount document.
     return discount;
+  }
+
+  /**
+   * Atomically increments the usage count for a given discount.
+   * This is called by the PurchaseService after a payment is successfully completed.
+   * @param discountId The ID of the discount to increment.
+   */
+  async incrementUsageCount(discountId: string): Promise<void> {
+    this.logger.log(`Incrementing usage count for discount ID: ${discountId}`);
+    if (!Types.ObjectId.isValid(discountId)) {
+      // Log an error but don't throw, as this shouldn't fail the entire purchase flow.
+      this.logger.error(`Invalid discount ID format passed to incrementUsageCount: ${discountId}`);
+      return;
+    }
+
+    const updatedDiscount = await this.discountRepository.incrementUsageCount(discountId);
+
+    if (!updatedDiscount) {
+      // This is an important state to log. It means a purchase was completed with a discount
+      // that could not be found for incrementing. This could happen in a race condition
+      // if the last available discount was used by another process.
+      this.logger.warn(`Could not find discount with ID "${discountId}" to increment usage count.`);
+    } else {
+      this.logger.log(`Successfully incremented usage count for discount ${discountId}. New count: ${updatedDiscount.usageCount}`);
+    }
   }
 }
