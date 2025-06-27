@@ -25,6 +25,11 @@ export class FindAllPurchasesQueryDto {
     @IsEnum(PaymentStatus)
     paymentStatus?: PaymentStatus;
 
+    @ApiPropertyOptional({ description: 'Filter by the ID of the applied discount.' })
+    @IsOptional()
+    @IsMongoId()
+    appliedDiscountId?: string;
+
     @ApiPropertyOptional({ description: 'Filter by payment method.' })
     @IsOptional()
     @IsString()
