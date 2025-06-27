@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { IsMongoId, IsNotEmpty, IsString, IsOptional, IsNumber, Min, IsEnum, IsDateString, IsBoolean } from "class-validator";
-import { DiscountType, SupportedCurrencies } from "../entities/ticket-type.entity";
+import { SupportedCurrencies } from "../entities/ticket-type.entity";
 
 export class CreateTicketTypeDto {
     @ApiProperty({ description: 'The ID of the event this ticket type belongs to.', example: '60c72b2f9b1d4c001c8e4a01' })
@@ -8,10 +8,10 @@ export class CreateTicketTypeDto {
     @IsNotEmpty()
     eventId: string;
 
-    @ApiProperty({ description: 'The ID of the organization that owns the event.', example: '60c72b2f9b1d4c001c8e4a02' })
-    @IsMongoId()
-    @IsNotEmpty()
-    organizationId: string; // This will typically be set by the service based on the event's organizationId
+    // @ApiProperty({ description: 'The ID of the organization that owns the event.', example: '60c72b2f9b1d4c001c8e4a02' })
+    // @IsMongoId()
+    // @IsNotEmpty()
+    // organizationId: string; // This will typically be set by the service based on the event's organizationId
 
     @ApiProperty({ description: 'Name of the ticket type (e.g., "VIP", "Regular", "Early Bird").', example: 'Regular Admission' })
     @IsString()
@@ -40,11 +40,13 @@ export class CreateTicketTypeDto {
     @IsNotEmpty()
     quantity: number;
 
-    @ApiProperty({ description: 'The total number of tickets of this type available for sale.', example: 100 })
-    @IsNumber()
-    @Min(0)
-    @IsOptional()
-    quantitySold: number;
+        // CHANGE: Removed quantitySold. This is a derived value and should not be set on creation.
+
+    // @ApiProperty({ description: 'The total number of tickets of this type available for sale.', example: 100 })
+    // @IsNumber()
+    // @Min(0)
+    // @IsOptional()
+    // quantitySold: number;
 
     @ApiProperty({ description: 'The date and time when sales for this ticket type begin (ISO 8601 format).', example: '2023-10-26T09:00:00Z' })
     @IsDateString()
@@ -99,34 +101,4 @@ export class CreateTicketTypeDto {
     @IsNumber()
     @Min(1)
     purchaseLimitPerUser?: number;
-
-    // New: Discount Fields for DTO
-    @ApiPropertyOptional({ description: 'Type of discount applied to this ticket type.', enum: DiscountType, example: DiscountType.NONE, default: DiscountType.NONE })
-    @IsOptional()
-    @IsEnum(DiscountType)
-    discountType?: DiscountType = DiscountType.NONE;
-
-    @ApiPropertyOptional({ description: 'The value of the discount (amount for fixed, percentage for percentage).', example: 10.00, default: 0 })
-    @IsOptional()
-    @IsNumber()
-    @Min(0)
-    discountValue?: number = 0;
-
-    @ApiPropertyOptional({ description: 'A promotional code required to apply this discount.', example: 'SAVE10' })
-    @IsOptional()
-    @IsString()
-    @IsNotEmpty() // Ensure it's not just an empty string if provided
-    discountCode?: string;
-
-    @ApiPropertyOptional({ description: 'Minimum number of tickets required for this discount to apply.', example: 2 })
-    @IsOptional()
-    @IsNumber()
-    @Min(1)
-    minTicketsForDiscount?: number;
-
-    @ApiPropertyOptional({ description: 'Maximum amount that can be discounted if discountType is percentage.', example: 20.00 })
-    @IsOptional()
-    @IsNumber()
-    @Min(0)
-    maxDiscountAmount?: number;
 }
