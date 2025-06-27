@@ -23,8 +23,8 @@ export class OrganizationService {
 
   constructor(
     private readonly organizationRepository: OrganizationRepository,
-        private readonly usersService: UsersService, // Injected UsersService
-  ) {}
+    private readonly usersService: UsersService, // Injected UsersService
+  ) { }
 
   /**
    * Maps an OrganizationDocument to an OrganizationResponseDto.
@@ -47,9 +47,11 @@ export class OrganizationService {
       email: organization.email,
       address: organization.address,
       websiteUrl: organization.websiteUrl,
+      socialMediaLinks: organization.socialMediaLinks,
       primaryContact: organization.primaryContact,
       status: organization.status,
       isActive: organization.isActive,
+      isVerified: organization.isVerified,
       expiry_date: organization.expiry_date,
       location: organization.location,
       hasStkPush: organization.hasStkPush,
