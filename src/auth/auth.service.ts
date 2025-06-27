@@ -41,7 +41,6 @@ export class AuthService {
     const {
       email,
       password,
-      clientId,
       firstName,
       lastName,
       phone,
