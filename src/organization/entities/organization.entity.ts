@@ -9,17 +9,36 @@ import { UserRole } from '../../auth/schema/user.schema'; // Assuming UserRole i
  */
 @Schema({ _id: false }) // _id: false means Mongoose won't create an _id for this subdocument
 export class BankPaymentDetails {
-    @Prop({ required: true, trim: true })
-    accountNumber: string;
+  @Prop({ required: true, trim: true })
+  accountNumber: string;
 
-    @Prop({ required: true, trim: true })
-    accountName: string;
+  @Prop({ required: true, trim: true })
+  accountName: string;
 
-    @Prop({ required: true, trim: true })
-    bankName: string;
+  @Prop({ required: true, trim: true })
+  bankName: string;
 
-    @Prop({ trim: true })
-    bankBranch?: string; // Optional: Branch name of the bank
+  @Prop({ trim: true })
+  bankBranch?: string; // Optional: Branch name of the bank
+}
+
+/**
+ * Represents a social media link for an organization.
+ * This sub-schema allows for storing various social media profiles in a structured way.
+ */
+@Schema({ _id: false }) // _id: false as it's a subdocument
+export class SocialMediaLink {
+  /**
+   * The social media platform (e.g., 'Facebook', 'Twitter', 'Instagram').
+   */
+  @Prop({ required: true, trim: true })
+  platform: string;
+
+  /**
+   * The full URL to the organization's profile on the platform.
+   */
+  @Prop({ required: true, trim: true })
+  url: string;
 }
 
 
@@ -28,14 +47,14 @@ export class BankPaymentDetails {
  */
 @Schema({ _id: false }) // _id: false means Mongoose won't create an _id for this subdocument
 export class MpesaPaymentDetails {
-    @Prop({ trim: true })
-    paybillNumber?: string; // For M-Pesa Paybill
+  @Prop({ trim: true })
+  paybillNumber?: string; // For M-Pesa Paybill
 
-    @Prop({ trim: true })
-    accountNumber?: string; // Account number for Paybill (often the invoice number or customer ID)
+  @Prop({ trim: true })
+  accountNumber?: string; // Account number for Paybill (often the invoice number or customer ID)
 
-    @Prop({ trim: true })
-    tillNumber?: string; // For M-Pesa Buy Goods and Services (Till Number)
+  @Prop({ trim: true })
+  tillNumber?: string; // For M-Pesa Buy Goods and Services (Till Number)
 }
 
 
@@ -54,8 +73,8 @@ export enum OrganizationStatus {
 export type OrganizationDocument = HydratedDocument<Organization>;
 
 @Schema({ timestamps: true }) // Ensure timestamps are automatically managed (createdAt, updatedAt)
-export class Organization extends BaseDocument { 
-    // --- Core Organization Details ---
+export class Organization extends BaseDocument {
+  // --- Core Organization Details ---
 
   @Prop({ required: true, trim: true })
   name: string; // The full name of the organization (e.g., "Acme Events Inc.")
@@ -81,6 +100,9 @@ export class Organization extends BaseDocument {
   @Prop({ trim: true })
   websiteUrl?: string; // Official website URL
 
+  @Prop({ type: [SocialMediaLink], default: [] }) // Define the property as an array of SocialMediaLink subdocuments
+  socialMediaLinks?: SocialMediaLink[];
+
   @Prop({ trim: true })
   primaryContact?: string; // Name of the primary contact person
 
@@ -92,6 +114,9 @@ export class Organization extends BaseDocument {
 
   @Prop({ type: Date })
   expiry_date?: Date; // Date when the organization's subscription/account expires (optional)
+
+  @Prop({ default: false })
+  isVerified?: boolean;
 
   // --- Location Details ---
   // Using a flexible object for location. Consider a dedicated Location schema for more structure.
