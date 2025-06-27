@@ -11,6 +11,24 @@ export enum PaymentStatus {
   CANCELLED = 'cancelled', // Purchase was cancelled before payment completion
 }
 
+
+@Schema({ _id: false })
+export class PurchaseTicketItem {
+  @Prop({ type: Types.ObjectId, ref: 'TicketType', required: true })
+  ticketTypeId: Types.ObjectId;
+
+  @Prop({ required: true, min: 1 })
+  quantity: number;
+
+  @Prop({ required: true, min: 0 })
+  unitPrice: number; // The price per ticket *after* any applicable discount.
+
+  @Prop({ required: true, default: 0 })
+  discountAmount: number;
+}
+
+export const PurchaseTicketItemSchema = SchemaFactory.createForClass(PurchaseTicketItem);
+
 export type PurchaseDocument = HydratedDocument<Purchase>;
 
 @Schema({ timestamps: true }) // Ensure createdAt and updatedAt are automatically managed
@@ -24,41 +42,18 @@ export class Purchase extends BaseDocument {
   @Prop({ type: Types.ObjectId, ref: 'Organization', required: true })
   organizationId: Types.ObjectId;
 
-  @Prop({
-    type: [
-      {
-        ticketTypeId: { type: Types.ObjectId, ref: 'TicketType', required: true }, // Reference to the specific TicketType
-        quantity: { type: Number, required: true, min: 1 }, // Quantity of this ticket type purchased
-        unitPrice: { type: Number, required: true, min: 0 }, // Price per unit of this ticket type at the time of purchase
-        // Suggested: Add discount details per line item if applicable
-        discountApplied: { type: Boolean, default: false },
-        discountDetails: {
-          type: {
-            type: String, // e.g., 'fixed_amount', 'percentage'
-            value: Number,
-            code: String, // The discount code used for this line item
-          },
-          required: false,
-        },
-      },
-    ],
-    required: true,
-  })
-  tickets: {
-    ticketTypeId: Types.ObjectId;
-    quantity: number;
-    unitPrice: number;
-    discountApplied?: boolean;
-    discountDetails?: {
-      type: string;
-      value: number;
-      code?: string;
-    };
-  }[];
+  @Prop({ type: [PurchaseTicketItemSchema], required: true })
+  tickets: PurchaseTicketItem[];
 
 
   @Prop({ required: true, min: 0 })
   totalAmount: number;
+
+  @Prop({ type: Types.ObjectId, ref: 'Discount', required: false })
+  appliedDiscountId?: Types.ObjectId;
+
+  @Prop({ required: false, default: 0 })
+  discountAmountSaved?: number;
 
   @Prop({ type: String, enum: SupportedCurrencies, required: true })
   currency: SupportedCurrencies;
@@ -91,14 +86,14 @@ export class Purchase extends BaseDocument {
   @Prop({ default: false })
   ticketsGenerated: boolean;
 
-  @Prop({ trim: true })
-  ipAddress?: string;
+  // @Prop({ trim: true })
+  // ipAddress?: string;
 
-  @Prop({ trim: true })
-  userAgent?: string;
+  // @Prop({ trim: true })
+  // userAgent?: string;
 
-  @Prop({ trim: true })
-  notes?: string;
+  // @Prop({ trim: true })
+  // notes?: string;
 
   @Prop({ default: 0, min: 0 })
   refundAmount: number;
@@ -132,10 +127,7 @@ export class Purchase extends BaseDocument {
 
 export const PurchaseSchema = SchemaFactory.createForClass(Purchase);
 
-// --- Schema Indexes (for performance) ---
-PurchaseSchema.index({ buyerId: 1 }); // Fast lookup of purchases by buyer
-PurchaseSchema.index({ eventId: 1 }); // Fast lookup of purchases by event
-PurchaseSchema.index({ organizationId: 1 }); // Fast lookup of purchases by organization
-PurchaseSchema.index({ paymentStatus: 1 }); // Efficient filtering by payment status
-PurchaseSchema.index({ 'paymentDetails.transactionId': 1 }, { sparse: true }); // Index for payment gateway transaction ID
-PurchaseSchema.index({ ticketsGenerated: 1 }); // For finding purchases that need ticket generation
+PurchaseSchema.index({ buyerId: 1 });
+PurchaseSchema.index({ eventId: 1 });
+PurchaseSchema.index({ organizationId: 1 });
+PurchaseSchema.index({ paymentStatus: 1 });
