@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { BaseDocument } from '../../database/base.schema';
-import { DiscountType } from '../../ticket-type/entities/ticket-type.entity'; // Reusing the enum
+import { DiscountType } from '../enum/discount-type.enum';
 
 export type DiscountDocument = HydratedDocument<Discount>;
 
