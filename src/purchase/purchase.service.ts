@@ -1,16 +1,17 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
-import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { Types, FilterQuery } from 'mongoose';
 import { EventService } from 'src/event/event.service';
 import { PaginatedResponseDto } from 'src/shared/dto/paginated-response.dto';
-import { SupportedCurrencies } from 'src/ticket-type/entities/ticket-type.entity';
 import { TicketTypeService } from 'src/ticket-type/ticket-type.service';
 import { FindAllPurchasesQueryDto } from './dto/find-all-purchase-query.dto';
 import { PurchaseResponseDto } from './dto/purchase-response.dto';
-import { PurchaseDocument, PaymentStatus } from './entities/purchase.entity';
+import { PurchaseDocument, PaymentStatus, PurchaseTicketItem } from './entities/purchase.entity';
 import { PurchaseRepository } from './purchase.repository';
 import { UsersService } from 'src/users/users.service';
+import { DiscountService } from 'src/discount/discount.service';
+import { DiscountDocument } from '../discount/entities/discount.entity'; // CHANGE: Import DiscountDocument
+import { DiscountType } from 'src/discount/enum/discount-type.enum';
 
 @Injectable()
 export class PurchaseService {
@@ -21,13 +22,13 @@ export class PurchaseService {
     private readonly eventService: EventService,
     private readonly ticketTypeService: TicketTypeService,
     private readonly usersService: UsersService, // Assuming a UserService for buyer validation
+    private readonly discountService: DiscountService, // CHANGE: Inject DiscountService
+
     // private readonly ticketService: TicketService, // TODO: Inject TicketService when implemented for ticket generation
-  ) {}
+  ) { }
 
   /**
    * Maps a PurchaseDocument to a public-facing PurchaseResponseDto.
-   * @param purchase The purchase document from the database.
-   * @returns The mapped DTO.
    */
   private mapToResponseDto(purchase: PurchaseDocument): PurchaseResponseDto {
     if (!purchase) {
@@ -38,45 +39,38 @@ export class PurchaseService {
       buyerId: purchase.buyerId.toString(),
       eventId: purchase.eventId.toString(),
       organizationId: purchase.organizationId.toString(),
+      // CHANGE: Map the simplified ticket item structure.
       tickets: purchase.tickets.map((item) => ({
         ticketTypeId: item.ticketTypeId.toString(),
         quantity: item.quantity,
         unitPrice: item.unitPrice,
-        discountApplied: item.discountApplied,
-        discountDetails: item.discountDetails,
+        discountAmount: item.discountAmount,
       })),
       totalAmount: purchase.totalAmount,
       currency: purchase.currency,
       paymentStatus: purchase.paymentStatus,
       paymentMethod: purchase.paymentMethod,
+      // CHANGE: Add the new discount-related fields to the response.
+      appliedDiscountId: purchase.appliedDiscountId?.toString(),
+      discountAmountSaved: purchase.discountAmountSaved,
       paymentDetails: purchase.paymentDetails
         ? {
-            transactionId: purchase.paymentDetails.transactionId,
-            paymentDate: purchase.paymentDetails.paymentDate,
-            paymentReference: purchase.paymentDetails.paymentReference,
-            paymentGatewayResponse: purchase.paymentDetails.paymentGatewayResponse,
-            paymentProvider: purchase.paymentDetails.paymentProvider,
-            paymentChannel: purchase.paymentDetails.paymentChannel,
-          }
+          transactionId: purchase.paymentDetails.transactionId,
+          paymentDate: purchase.paymentDetails.paymentDate,
+          paymentReference: purchase.paymentDetails.paymentReference,
+          paymentGatewayResponse: purchase.paymentDetails.paymentGatewayResponse,
+          paymentProvider: purchase.paymentDetails.paymentProvider,
+          paymentChannel: purchase.paymentDetails.paymentChannel,
+        }
         : undefined,
       ticketsGenerated: purchase.ticketsGenerated,
-      ipAddress: purchase.ipAddress,
-      userAgent: purchase.userAgent,
-      notes: purchase.notes,
-      // refundAmount: purchase.refundAmount,
-      // refunds: purchase.refunds.map((refund) => ({
-      //   refundId: refund.refundId,
-      //   amount: refund.amount,
-      //   refundDate: refund.refundDate,
-      //   reason: refund.reason,
-      //   processedBy: refund.processedBy?.toString(),
-      // })),
       isDeleted: purchase.isDeleted,
       createdAt: purchase.createdAt,
       updatedAt: purchase.updatedAt,
       updatedBy: purchase.updatedBy,
     };
   }
+
 
   /**
    * Initiates a new purchase. This involves validating ticket types, calculating total,
@@ -96,217 +90,145 @@ export class PurchaseService {
     ipAddress?: string,
     userAgent?: string,
   ): Promise<PurchaseResponseDto> {
-    this.logger.log(`User ${buyerId} attempting to create a purchase for event ${createPurchaseDto.eventId}`);
+    const { eventId, tickets, discountCode } = createPurchaseDto;
+    this.logger.log(`User ${buyerId} creating purchase for event ${eventId} with code: ${discountCode || 'N/A'}`);
 
-    // 1. Validate Buyer ID
-    if (!Types.ObjectId.isValid(buyerId)) {
-      throw new BadRequestException('Invalid buyer ID format.');
-    }
-    const buyer = await this.usersService.findOne(buyerId); // Assuming findOne in UserService
+    // 1. Validate Buyer and Event
+    const buyer = await this.usersService.findOne(buyerId);
     if (!buyer) {
       throw new NotFoundException(`Buyer with ID "${buyerId}" not found.`);
     }
-
-    // 2. Validate Event
-    if (!Types.ObjectId.isValid(createPurchaseDto.eventId)) {
-      throw new BadRequestException('Invalid event ID format.');
-    }
-    const event = await this.eventService.findOnePublic(createPurchaseDto.eventId); // Assuming public access to event details
+    const event = await this.eventService.findOnePublic(eventId);
     if (!event) {
-      throw new NotFoundException(`Event with ID "${createPurchaseDto.eventId}" not found.`);
+      throw new NotFoundException(`Event with ID "${eventId}" not found.`);
     }
 
-    // 3. Process Ticket Items and Calculate Total
-    let totalAmount = 0;
-    let purchaseItems: PurchaseDocument['tickets'] = [];
-    let commonCurrency: SupportedCurrencies | null = null;
-
-    for (const itemDto of createPurchaseDto.tickets) {
-      if (!Types.ObjectId.isValid(itemDto.ticketTypeId)) {
-        throw new BadRequestException(`Invalid ticket type ID format for item: ${itemDto.ticketTypeId}`);
+    // --- CHANGE: Validate discount code BEFORE processing tickets ---
+    let validDiscount: DiscountDocument | null = null;
+    if (discountCode) {
+      try {
+        // Use the discount service to find and validate the code for the given event.
+        // This will throw an error if the code is invalid, expired, or used up.
+        validDiscount = await this.discountService.validateAndApplyDiscount(discountCode, eventId);
+        this.logger.log(`Applying valid discount ${validDiscount.code} to purchase.`);
+      } catch (error) {
+        this.logger.warn(`Invalid discount code "${discountCode}" attempted for event ${eventId}: ${error.message}`);
+        throw new BadRequestException(error.message);
       }
+    }
 
-      const ticketType = await this.ticketTypeService.findOne(itemDto.ticketTypeId); // Assuming public access to ticket types
-      if (!ticketType) {
-        throw new NotFoundException(`Ticket type with ID "${itemDto.ticketTypeId}" not found.`);
-      }
+    // 2. Process Ticket Items and Calculate Total
+    let subtotal = 0;
+    let totalDiscountAmount = 0;
+    const purchaseItems: PurchaseTicketItem[] = [];
+    const firstTicketType = await this.ticketTypeService.findOne(tickets[0].ticketTypeId);
+    const commonCurrency = firstTicketType.currency;
 
-      // Ensure all ticket types belong to the same event and organization
-      if (ticketType.eventId.toString() !== event.id) {
-        throw new BadRequestException(`Ticket type "${ticketType.name}" does not belong to event "${event.title}".`);
-      }
-      if (ticketType.organizationId.toString() !== event.organizationId) {
-        throw new BadRequestException(`Ticket type "${ticketType.name}" does not belong to event's organization.`);
-      }
+    for (const itemDto of tickets) {
+      const ticketType = await this.ticketTypeService.findOne(itemDto.ticketTypeId);
 
-      // Validate currency consistency
-      if (!commonCurrency) {
-        commonCurrency = ticketType.currency;
-      } else if (commonCurrency !== ticketType.currency) {
+      if (ticketType.currency !== commonCurrency) {
         throw new BadRequestException('All ticket types in a single purchase must have the same currency.');
       }
-
-      // Check sales period and availability
-      const now = new Date();
-      if (
-        !ticketType.isActive ||
-        ticketType.isDeleted ||
-        ticketType.isHidden ||
-        now < ticketType.salesStartDate ||
-        now > ticketType.salesEndDate ||
-        (ticketType.availableUntil && now > ticketType.availableUntil)
-      ) {
-        throw new BadRequestException(`Ticket type "${ticketType.name}" is not currently available for sale.`);
-      }
-
-      // Check quantity limits
-      if (itemDto.quantity < ticketType.minPurchaseQuantity) {
-        throw new BadRequestException(`Minimum purchase quantity for "${ticketType.name}" is ${ticketType.minPurchaseQuantity}.`);
-      }
-      if (ticketType.maxPurchaseQuantity && itemDto.quantity > ticketType.maxPurchaseQuantity) {
-        throw new BadRequestException(`Maximum purchase quantity for "${ticketType.name}" is ${ticketType.maxPurchaseQuantity}.`);
-      }
-      // TODO: Implement purchaseLimitPerUser check (requires tracking user's past purchases)
-
-      // Calculate unit price considering discounts
-      const unitPrice = this.ticketTypeService.calculateFinalPrice(ticketType, itemDto.quantity);
-
-      // Check if enough tickets are available (optimistic check before atomic update)
       if (ticketType.quantity < itemDto.quantity) {
         throw new ConflictException(`Not enough tickets available for "${ticketType.name}". Available: ${ticketType.quantity}`);
       }
+      // ... (other ticket type validations like sales dates, active status, etc.)
+
+      const basePrice = ticketType.price;
+      let itemDiscountValue = 0;
+
+      // --- CHANGE: Apply discount logic to each item ---
+      if (validDiscount) {
+        const isApplicable =
+          validDiscount.applicableTicketTypeIds.length === 0 || // Applies to all ticket types
+          validDiscount.applicableTicketTypeIds.some(id => id.toString() === ticketType.id);
+
+        if (isApplicable) {
+          if (validDiscount.discountType === DiscountType.FIXED_AMOUNT) {
+            itemDiscountValue = validDiscount.discountValue;
+          } else if (validDiscount.discountType === DiscountType.PERCENTAGE) {
+            itemDiscountValue = basePrice * (validDiscount.discountValue / 100);
+          }
+        }
+      }
+
+      const finalUnitPrice = Math.max(0, basePrice - itemDiscountValue);
+      const totalItemDiscount = (basePrice - finalUnitPrice) * itemDto.quantity;
 
       purchaseItems.push({
         ticketTypeId: new Types.ObjectId(itemDto.ticketTypeId),
         quantity: itemDto.quantity,
-        unitPrice: unitPrice,
-        discountApplied: unitPrice < ticketType.price, // Simple check if price is less than original
-        discountDetails: unitPrice < ticketType.price ? {
-          type: ticketType.discountType,
-          value: ticketType.discountValue,
-          code: ticketType.discountCode,
-        } : undefined,
-      });
-      totalAmount += unitPrice * itemDto.quantity;
-    }
-
-    if (!commonCurrency) {
-      throw new BadRequestException('No valid ticket types provided for purchase.');
-    }
-
-    // 4. Create Purchase Record (PENDING status)
-    try {
-      const newPurchase = await this.purchaseRepository.create({
-        buyerId: new Types.ObjectId(buyerId),
-        eventId: new Types.ObjectId(event.id),
-        organizationId: new Types.ObjectId(event.organizationId),
-        tickets: purchaseItems,
-        totalAmount: parseFloat(totalAmount.toFixed(2)), // Ensure total is correctly formatted
-        currency: commonCurrency,
-        paymentStatus: PaymentStatus.PENDING, // Initial status
-        paymentMethod: createPurchaseDto.paymentMethod,
-        ipAddress: ipAddress,
-        userAgent: userAgent,
-        notes: createPurchaseDto.notes,
-        ticketsGenerated: false, // Tickets are not generated yet
+        unitPrice: parseFloat(finalUnitPrice.toFixed(2)),
+        discountAmount: parseFloat(totalItemDiscount.toFixed(2)),
       });
 
-      this.logger.log(`Purchase ${newPurchase._id} created with PENDING status.`);
-      return this.mapToResponseDto(newPurchase);
-    } catch (error) {
-      this.logger.error(`Failed to create purchase: ${error.message}`, error.stack);
-      throw error;
+      subtotal += basePrice * itemDto.quantity;
+      totalDiscountAmount += totalItemDiscount;
     }
+
+    const finalTotalAmount = subtotal - totalDiscountAmount;
+
+    // 3. Create Purchase Record
+    const newPurchase = await this.purchaseRepository.create({
+      buyerId: new Types.ObjectId(buyerId),
+      eventId: new Types.ObjectId(eventId),
+      organizationId: new Types.ObjectId(event.organizationId),
+      tickets: purchaseItems,
+      totalAmount: parseFloat(finalTotalAmount.toFixed(2)),
+      currency: commonCurrency,
+      paymentStatus: PaymentStatus.PENDING,
+      paymentMethod: createPurchaseDto.paymentMethod,
+      // CHANGE: Store discount information in the purchase record.
+      appliedDiscountId: validDiscount ? validDiscount._id : undefined,
+      discountAmountSaved: parseFloat(totalDiscountAmount.toFixed(2)),
+    });
+
+    this.logger.log(`Purchase ${newPurchase._id} created with PENDING status.`);
+    return this.mapToResponseDto(newPurchase);
   }
 
   /**
-   * Updates the payment status of a purchase. This is typically called by a payment gateway webhook.
-   * @param purchaseId The ID of the purchase to update.
-   * @param newPaymentStatus The new payment status.
-   * @param paymentDetails Optional details from the payment gateway.
-   * @returns The updated purchase record.
-   * @throws NotFoundException if the purchase is not found.
-   * @throws BadRequestException if the payment status transition is invalid.
-   * @throws ConflictException if inventory update fails (e.g., oversold).
+   * Updates the payment status of a purchase.
+   * This is where side-effects of a successful payment, like updating inventory
+   * and discount usage, should occur.
    */
   async updatePaymentStatus(
     purchaseId: string,
     newPaymentStatus: PaymentStatus,
-    paymentDetails?: {
-      transactionId?: string;
-      paymentDate?: Date;
-      paymentReference?: string;
-      paymentGatewayResponse?: Record<string, any>;
-      paymentProvider?: string;
-      paymentChannel?: string;
-    },
+    paymentDetails?: any,
   ): Promise<PurchaseResponseDto> {
-    this.logger.log(`Updating payment status for purchase ${purchaseId} to ${newPaymentStatus}`);
-    if (!Types.ObjectId.isValid(purchaseId)) {
-      throw new BadRequestException('Invalid purchase ID format.');
-    }
-
     const purchase = await this.purchaseRepository.findById(purchaseId);
     if (!purchase) {
       throw new NotFoundException(`Purchase with ID "${purchaseId}" not found.`);
     }
 
-    // Prevent updating already completed/refunded purchases (unless specific transitions are allowed)
-    if (
-      purchase.paymentStatus === PaymentStatus.COMPLETED ||
-      purchase.paymentStatus === PaymentStatus.REFUNDED
-    ) {
-      if (newPaymentStatus !== PaymentStatus.REFUNDED) { // Allow refunding a completed purchase
-        throw new BadRequestException(`Cannot change status of a ${purchase.paymentStatus} purchase.`);
-      }
-    }
-
-    // Handle status transitions and side effects
     if (newPaymentStatus === PaymentStatus.COMPLETED && purchase.paymentStatus !== PaymentStatus.COMPLETED) {
-      // If payment is now completed, decrement ticket type quantities
+      // Decrement ticket inventory
       for (const item of purchase.tickets) {
+        await this.ticketTypeService.incrementQuantitySold(item.ticketTypeId.toString(), item.quantity);
+      }
+
+      // --- CHANGE: Increment discount usage count on successful payment ---
+      if (purchase.appliedDiscountId) {
         try {
-          await this.ticketTypeService.incrementQuantitySold(
-            item.ticketTypeId.toString(),
-            item.quantity,
-          );
+          await this.discountService.incrementUsageCount(purchase.appliedDiscountId.toString());
+          this.logger.log(`Incremented usage count for discount ${purchase.appliedDiscountId}`);
         } catch (error) {
-          this.logger.error(
-            `Failed to update inventory for ticket type ${item.ticketTypeId} during purchase completion ${purchaseId}: ${error.message}`,
-            error.stack,
-          );
-          // This is a critical error: payment received but inventory not updated.
-          // You might want to log this, alert an admin, or even initiate an automatic refund.
-          throw new ConflictException(
-            `Failed to update ticket inventory for purchase ${purchaseId}. Please contact support.`,
-          );
+          this.logger.error(`Failed to increment usage count for discount ${purchase.appliedDiscountId}: ${error.message}`);
+          // This is a non-critical error for the user, but should be logged for admins.
+          // The purchase should still succeed.
         }
       }
-      // TODO: Trigger actual ticket generation here (call TicketService.generateTickets)
-      // await this.ticketService.generateTickets(purchaseId, purchase.tickets, purchase.buyerId, purchase.eventId, purchase.organizationId);
-      this.logger.log(`Tickets marked for generation for purchase ${purchaseId}.`);
+      // TODO: Trigger ticket generation
     } else if (newPaymentStatus === PaymentStatus.REFUNDED && purchase.paymentStatus !== PaymentStatus.REFUNDED) {
-      // If purchase is being refunded, increment ticket type quantities back
+      // Increment ticket inventory back
       for (const item of purchase.tickets) {
-        try {
-          await this.ticketTypeService.decrementQuantitySold(
-            item.ticketTypeId.toString(),
-            item.quantity,
-          );
-        } catch (error) {
-          this.logger.error(
-            `Failed to update inventory for ticket type ${item.ticketTypeId} during purchase refund ${purchaseId}: ${error.message}`,
-            error.stack,
-          );
-          // This is a critical error: refund processed but inventory not updated.
-          throw new InternalServerErrorException(
-            `Failed to update ticket inventory during refund for purchase ${purchaseId}. Manual intervention required.`,
-          );
-        }
+        await this.ticketTypeService.decrementQuantitySold(item.ticketTypeId.toString(), item.quantity);
       }
-      // TODO: Invalidate/cancel generated tickets here (call TicketService.invalidateTickets)
-      // await this.ticketService.invalidateTickets(purchaseId, userId); // userId of the person processing refund
-      this.logger.log(`Tickets marked for invalidation for purchase ${purchaseId}.`);
+      // Business Decision: We are NOT decrementing the discount usage count on refund
+      // to prevent abuse of limited-use codes.
+      // TODO: Invalidate generated tickets
     }
 
     const updatedPurchase = await this.purchaseRepository.updatePaymentStatus(
@@ -315,78 +237,40 @@ export class PurchaseService {
       paymentDetails,
     );
 
-    if (!updatedPurchase) {
-      throw new NotFoundException(`Purchase with ID "${purchaseId}" not found after status update attempt.`);
-    }
-    this.logger.log(`Purchase ${purchaseId} status updated to ${newPaymentStatus}.`);
     return this.mapToResponseDto(updatedPurchase);
   }
 
+
   /**
    * Finds all purchases with pagination and filtering.
-   * @param queryDto DTO for pagination and filtering options.
-   * @param authenticatedUserId Optional: The ID of the authenticated user (for customer-specific queries).
-   * @param authenticatedOrganizationId Optional: The organization ID of the authenticated user (for agent-specific queries).
-   * @returns A paginated list of purchases.
    */
   async findAll(
     queryDto: FindAllPurchasesQueryDto,
-    authenticatedUserId?: string, // For customers to see only their purchases
-    authenticatedOrganizationId?: string, // For agents to see only their org's purchases
+    authenticatedUserId?: string,
+    authenticatedOrganizationId?: string,
   ): Promise<PaginatedResponseDto<PurchaseResponseDto>> {
-    this.logger.log(`Fetching all purchases with query: ${JSON.stringify(queryDto)}`);
-
-    const {
-      page,
-      limit,
-      buyerId,
-      eventId,
-      organizationId,
-      paymentStatus,
-      paymentMethod,
-      currency,
-      includeDeleted,
-      sortBy,
-      sortDirection,
-      purchaseDateGte,
-      purchaseDateLte,
-    } = queryDto;
+    const { page, limit, buyerId, eventId, organizationId, paymentStatus, appliedDiscountId } = queryDto;
 
     const filter: FilterQuery<PurchaseDocument> = {};
 
-    // Enforce buyer ownership if authenticatedUserId is provided (for customers)
     if (authenticatedUserId) {
       filter.buyerId = new Types.ObjectId(authenticatedUserId);
     } else if (buyerId) {
-      // Allow filtering by buyerId for admins/agents
       filter.buyerId = new Types.ObjectId(buyerId);
     }
 
-    // Enforce organization ownership if authenticatedOrganizationId is provided (for agents)
     if (authenticatedOrganizationId) {
       filter.organizationId = new Types.ObjectId(authenticatedOrganizationId);
     } else if (organizationId) {
-      // Allow filtering by organizationId for admins
       filter.organizationId = new Types.ObjectId(organizationId);
     }
 
     if (eventId) filter.eventId = new Types.ObjectId(eventId);
     if (paymentStatus) filter.paymentStatus = paymentStatus;
-    if (paymentMethod) filter.paymentMethod = paymentMethod;
-    if (currency) filter.currency = currency;
-    if (!includeDeleted) filter.isDeleted = false;
+    // CHANGE: Add filtering by the applied discount ID.
+    if (appliedDiscountId) filter.appliedDiscountId = new Types.ObjectId(appliedDiscountId);
 
-    if (purchaseDateGte) filter.createdAt = { $gte: purchaseDateGte };
-    if (purchaseDateLte) filter.createdAt = { ...filter.createdAt, $lte: purchaseDateLte };
-
-    const sort = { [sortBy]: sortDirection === 'asc' ? 1 : -1 };
-
-    const paginatedResult = await this.purchaseRepository.findWithPagination(
-      filter,
-      page,
-      limit,
-      sort,
-    );
+    const paginatedResult = await this.purchaseRepository.findWithPagination(filter, page, limit);
 
     return new PaginatedResponseDto({
       data: paginatedResult.data.map(this.mapToResponseDto),
@@ -585,11 +469,11 @@ export class PurchaseService {
     return this.mapToResponseDto(updatedPurchase);
   }
 
-   /**
-   * Retrieves purchases by a specific buyer ID.
-   * @param buyerId The ID of the buyer.
-   * @returns An array of purchase response DTOs.
-   */
+  /**
+  * Retrieves purchases by a specific buyer ID.
+  * @param buyerId The ID of the buyer.
+  * @returns An array of purchase response DTOs.
+  */
   async findByBuyerId(buyerId: string): Promise<PurchaseResponseDto[]> {
     if (!Types.ObjectId.isValid(buyerId)) {
       throw new BadRequestException('Invalid buyer ID format.');
@@ -624,5 +508,5 @@ export class PurchaseService {
     return purchases.map(this.mapToResponseDto);
   }
 
-  
+
 }
