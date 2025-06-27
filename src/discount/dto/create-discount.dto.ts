@@ -12,7 +12,7 @@ import {
   IsBoolean,
   ArrayNotEmpty,
 } from 'class-validator';
-import { DiscountType } from '../../ticket-type/entities/ticket-type.entity';
+import { DiscountType } from '../enum/discount-type.enum';
 
 export class CreateDiscountDto {
   @ApiProperty({ description: 'The unique, user-facing code.', example: 'SUMMER2024' })
