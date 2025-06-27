@@ -21,6 +21,7 @@ import {
   ApiResponse,
   ApiQuery,
   ApiParam,
+  ApiTags,
 } from '@nestjs/swagger';
 import { GetUser } from 'src/auth/decorators/get-user.decorator';
 import { Roles } from 'src/auth/decorators/roles.decorator';
@@ -30,43 +31,28 @@ import { UserRole } from 'src/auth/schema/user.schema';
 import { PaginatedResponseDto } from 'src/shared/dto/paginated-response.dto';
 import { TicketTypeResponseDto } from './dto/ticket-type-response.dto';
 import { FindAllTicketTypesQueryDto } from './dto/find-all-ticket-types-query.dto';
+import { GetOrganizationId } from 'src/auth/decorators/get-organization-id.decorator';
 
-@Controller('ticket-types') // Changed to plural for RESTful consistency
-@ApiBearerAuth() // Indicates that JWT authentication is required for all endpoints in this controller
-@UseGuards(JwtAuthGuard) // Apply JwtAuthGuard to all endpoints by default
+
+@ApiTags('Ticket Types')
+@Controller('ticket-types')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard) // Apply JwtAuthGuard to all endpoints by default
 export class TicketTypeController {
   private readonly logger = new Logger(TicketTypeController.name);
 
   constructor(private readonly ticketTypeService: TicketTypeService) {}
 
   @Post()
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.AGENT, UserRole.ADMIN) // Only agents and admins can create ticket types
+  @Roles(UserRole.AGENT, UserRole.ADMIN)
   @ApiOperation({ summary: 'Create a new ticket type for an event' })
   @ApiBody({ type: CreateTicketTypeDto })
-  @ApiResponse({
-    status: HttpStatus.CREATED,
-    description: 'Ticket type successfully created.',
-    type: TicketTypeResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: 'Invalid input data or validation error.',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Event or Organization not found.',
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Forbidden. Not authorized to create ticket types for this event/organization.',
-  })
+  @ApiResponse({ status: HttpStatus.CREATED, description: 'Ticket type successfully created.', type: TicketTypeResponseDto })
   async create(
     @Body() createTicketTypeDto: CreateTicketTypeDto,
-    @GetUser('_id') userId: string, // The ID of the authenticated user
-    @GetUser('organizationId') organizationId: string, // The organization ID of the authenticated user
+    @GetUser('_id') userId: string,
+    @GetOrganizationId() organizationId: string,
   ): Promise<TicketTypeResponseDto> {
-    // The service will handle validation and authorization based on organizationId
     return this.ticketTypeService.create(
       createTicketTypeDto,
       userId,
@@ -75,21 +61,15 @@ export class TicketTypeController {
   }
 
   @Get()
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.AGENT, UserRole.ADMIN) // Agents can see their org's ticket types, Admins can see all
+  @Roles(UserRole.AGENT, UserRole.ADMIN)
   @ApiOperation({ summary: 'Get all ticket types with pagination and filtering' })
   @ApiQuery({ type: FindAllTicketTypesQueryDto })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'List of ticket types.',
-    type: PaginatedResponseDto<TicketTypeResponseDto>,
-  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'List of ticket types.', type: PaginatedResponseDto<TicketTypeResponseDto> })
   async findAll(
     @Query() query: FindAllTicketTypesQueryDto,
     @GetUser('roles') userRoles: UserRole[],
-    @GetUser('organizationId') organizationId: string, // The organization ID of the authenticated user
+    @GetOrganizationId() organizationId: string,
   ): Promise<PaginatedResponseDto<TicketTypeResponseDto>> {
-    // Admins can query all, agents are restricted to their organization
     const authOrgId = userRoles.includes(UserRole.ADMIN) ? undefined : organizationId;
     return this.ticketTypeService.findAll(query, authOrgId);
   }
