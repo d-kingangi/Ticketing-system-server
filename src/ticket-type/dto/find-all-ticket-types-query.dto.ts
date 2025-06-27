@@ -1,8 +1,21 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsString, IsOptional, IsEnum, IsBoolean, IsInt, Min, IsMongoId, IsDateString } from 'class-validator';
-import { DiscountType, SupportedCurrencies } from '../entities/ticket-type.entity';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsBoolean,
+  IsInt,
+  Min,
+  IsMongoId,
+  IsDateString,
+} from 'class-validator';
+import { SupportedCurrencies } from '../entities/ticket-type.entity';
 
+/**
+ * DTO for querying ticket types with pagination, sorting, and filtering.
+ * This DTO defines the structure of query parameters for fetching lists of ticket types.
+ */
 export class FindAllTicketTypesQueryDto {
   @ApiPropertyOptional({ description: 'Filter by ticket type name (case-insensitive search).' })
   @IsOptional()
@@ -14,7 +27,7 @@ export class FindAllTicketTypesQueryDto {
   @IsMongoId()
   eventId?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by organization Id.' })
+  @ApiPropertyOptional({ description: 'Filter by organization ID.' })
   @IsOptional()
   @IsMongoId()
   organizationId?: string;
