@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DiscountType } from '../../ticket-type/entities/ticket-type.entity'; // Reusing the enum
+import { DiscountType } from '../enum/discount-type.enum';
 
 /**
  * DTO for representing a Discount in API responses.
