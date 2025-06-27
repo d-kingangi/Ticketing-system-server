@@ -84,6 +84,18 @@ export class CreateLocationDto {
     coordinates?: [number, number];
 }
 
+export class CreateSocialMediaLinkDto {
+    @ApiProperty({ description: 'The social media platform (e.g., "Twitter", "Facebook")', example: 'Twitter' })
+    @IsString()
+    @IsNotEmpty()
+    platform: string;
+
+    @ApiProperty({ description: 'The full URL to the organization\'s profile', example: 'https://twitter.com/acme_events' })
+    @IsUrl()
+    @IsNotEmpty()
+    url: string;
+}
+
 export class CreateOrganizationDto {
     @ApiProperty({ description: 'The full name of the organization', example: 'Acme Events Inc.' })
     @IsString()
@@ -125,6 +137,13 @@ export class CreateOrganizationDto {
     @IsUrl()
     websiteUrl?: string;
 
+    @ApiPropertyOptional({ description: 'Social media links for the organization', type: [CreateSocialMediaLinkDto] })
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => CreateSocialMediaLinkDto)
+    socialMediaLinks?: CreateSocialMediaLinkDto[];
+
     @ApiPropertyOptional({ description: 'Name of the primary contact person', example: 'Jane Doe' })
     @IsOptional()
     @IsString()
@@ -139,6 +158,11 @@ export class CreateOrganizationDto {
     @IsOptional()
     @IsBoolean()
     isActive?: boolean = true;
+
+    @ApiPropertyOptional({ description: 'Indicates if the organization is verified', example: false, default: false })
+    @IsOptional()
+    @IsBoolean()
+    isVerified?: boolean = false;
 
     @ApiPropertyOptional({ description: 'Date when the organization\'s subscription/account expires (ISO 8601 format)', example: '2025-12-31T23:59:59Z' })
     @IsOptional()
