@@ -12,7 +12,6 @@ import { UpdateTicketTypeDto } from './dto/update-ticket-type.dto';
 import { TicketTypeRepository } from './ticket-type.repository';
 import {
   TicketTypeDocument,
-  DiscountType,
 } from './entities/ticket-type.entity';
 import { TicketTypeResponseDto } from './dto/ticket-type-response.dto';
 import { FindAllTicketTypesQueryDto } from './dto/find-all-ticket-types-query.dto';
@@ -35,9 +34,7 @@ export class TicketTypeService {
    * @param ticketType The ticket type document from the database.
    * @returns The mapped DTO.
    */
-  private mapToResponseDto(
-    ticketType: TicketTypeDocument,
-  ): TicketTypeResponseDto {
+  private mapToResponseDto(ticketType: TicketTypeDocument): TicketTypeResponseDto {
     if (!ticketType) {
       return null;
     }
@@ -61,79 +58,11 @@ export class TicketTypeService {
       isHidden: ticketType.isHidden,
       availableUntil: ticketType.availableUntil,
       purchaseLimitPerUser: ticketType.purchaseLimitPerUser,
-      discountType: ticketType.discountType,
-      discountValue: ticketType.discountValue,
-      discountCode: ticketType.discountCode,
-      minTicketsForDiscount: ticketType.minTicketsForDiscount,
-      maxDiscountAmount: ticketType.maxDiscountAmount,
       isDeleted: ticketType.isDeleted,
       createdAt: ticketType.createdAt,
       updatedAt: ticketType.updatedAt,
       updatedBy: ticketType.updatedBy,
     };
-  }
-
-  /**
-   * Calculates the final price of a ticket type after applying discounts.
-   * This is a core business logic method.
-   * @param ticketType The TicketTypeDocument to calculate price for.
-   * @param quantity The number of tickets being purchased (for minTicketsForDiscount).
-   * @param providedDiscountCode Optional discount code provided by the user.
-   * @returns The calculated final price per ticket.
-   */
-  public calculateFinalPrice(
-    ticketType: TicketTypeDocument,
-    quantity: number = 1, // Default to 1 for single ticket price display
-    providedDiscountCode?: string,
-  ): number {
-    let finalPrice = ticketType.price;
-
-    // Check if the ticket type is currently active for sale and not hidden/deleted
-    const now = new Date();
-    const isSalesPeriodActive =
-      now >= ticketType.salesStartDate && now <= ticketType.salesEndDate;
-    const isAvailableUntilValid =
-      !ticketType.availableUntil || now <= ticketType.availableUntil;
-
-    if (
-      !ticketType.isActive ||
-      ticketType.isDeleted ||
-      ticketType.isHidden ||
-      !isSalesPeriodActive ||
-      !isAvailableUntilValid
-    ) {
-      // If not active for sale, no discount applies, return original price (or throw error if not available)
-      return finalPrice;
-    }
-
-    // Check discount code validity
-    const isDiscountCodeValid =
-      !ticketType.discountCode ||
-      (ticketType.discountCode &&
-        providedDiscountCode &&
-        ticketType.discountCode === providedDiscountCode);
-
-    // Check minimum tickets for discount
-    const isMinTicketsMet =
-      !ticketType.minTicketsForDiscount ||
-      quantity >= ticketType.minTicketsForDiscount;
-
-    if (isDiscountCodeValid && isMinTicketsMet) {
-      if (ticketType.discountType === DiscountType.FIXED_AMOUNT) {
-        finalPrice = Math.max(0, ticketType.price - ticketType.discountValue);
-      } else if (ticketType.discountType === DiscountType.PERCENTAGE) {
-        let discountedAmount = ticketType.price * (ticketType.discountValue / 100);
-        if (
-          ticketType.maxDiscountAmount &&
-          discountedAmount > ticketType.maxDiscountAmount
-        ) {
-          discountedAmount = ticketType.maxDiscountAmount;
-        }
-        finalPrice = Math.max(0, ticketType.price - discountedAmount);
-      }
-    }
-
-    return parseFloat(finalPrice.toFixed(2)); // Ensure price is formatted to 2 decimal places
   }
 
   /**
@@ -151,40 +80,16 @@ export class TicketTypeService {
     userId: string,
     authenticatedOrganizationId: string,
   ): Promise<TicketTypeResponseDto> {
-    this.logger.log(
-      `User ${userId} attempting to create ticket type "${createTicketTypeDto.name}" for event ${createTicketTypeDto.eventId}`,
-    );
+    this.logger.log(`User ${userId} attempting to create ticket type "${createTicketTypeDto.name}" for event ${createTicketTypeDto.eventId}`);
 
-    // 1. Validate Event ID and Organization ID format
-    if (
-      !Types.ObjectId.isValid(createTicketTypeDto.eventId) ||
-      !Types.ObjectId.isValid(createTicketTypeDto.organizationId)
-    ) {
-      throw new BadRequestException('Invalid Event ID or Organization ID format.');
-    }
-
-    // 2. Verify Event exists and belongs to the specified organization
-    // This call ensures the event exists and the organizationId in the DTO is valid for that event.
-    const event = await this.eventService.findOne(
-      createTicketTypeDto.eventId,
-      createTicketTypeDto.organizationId,
-      false, // Do not include deleted events
-    );
+    // 1. Verify the user is authorized for the organization associated with the event.
+    await this.organizationService.verifyUserInOrganization(userId, authenticatedOrganizationId);
+    const event = await this.eventService.findOne(createTicketTypeDto.eventId, authenticatedOrganizationId);
     if (!event) {
-      throw new NotFoundException(
-        `Event with ID "${createTicketTypeDto.eventId}" not found or does not belong to organization "${createTicketTypeDto.organizationId}".`,
-      );
+        throw new NotFoundException(`Event with ID "${createTicketTypeDto.eventId}" not found for your organization.`);
     }
 
-    // 3. Authorization Check: Ensure the authenticated user's organization matches the event's organization
-    // This is a critical security check to prevent agents from creating ticket types for other organizations.
-    if (event.organizationId !== authenticatedOrganizationId) {
-      throw new ForbiddenException(
-        'You are not authorized to create ticket types for this event/organization.',
-      );
-    }
-
-    // 4. Validate Sales Dates and availability
+    // 2. Validate sales dates.
     if (createTicketTypeDto.salesStartDate >= createTicketTypeDto.salesEndDate) {
       throw new BadRequestException('Sales start date must be before sales end date.');
     }
@@ -192,32 +97,17 @@ export class TicketTypeService {
       throw new BadRequestException('Available until date cannot be after sales end date.');
     }
 
-    // 5. Validate Discount Logic (e.g., percentage value, fixed amount vs. price)
-    if (createTicketTypeDto.discountType === DiscountType.PERCENTAGE &&
-        (createTicketTypeDto.discountValue < 0 || createTicketTypeDto.discountValue > 100)) {
-      throw new BadRequestException('Percentage discount value must be between 0 and 100.');
-    }
-    if (createTicketTypeDto.discountType === DiscountType.FIXED_AMOUNT &&
-        createTicketTypeDto.discountValue > createTicketTypeDto.price) {
-      throw new BadRequestException('Fixed amount discount cannot be greater than the ticket price.');
-    }
 
-    try {
-      // Construct the ticket type data, ensuring ObjectId types for references
-      const ticketTypeData = {
-        ...createTicketTypeDto,
-        organizationId: new Types.ObjectId(authenticatedOrganizationId), // Enforce authenticated user's organization
-        eventId: new Types.ObjectId(createTicketTypeDto.eventId), // Ensure it's an ObjectId
-        updatedBy: userId, // Record who created/last updated it
-      };
+    const ticketTypeData = {
+      ...createTicketTypeDto,
+      organizationId: new Types.ObjectId(authenticatedOrganizationId),
+      eventId: new Types.ObjectId(createTicketTypeDto.eventId),
+      updatedBy: userId,
+    };
 
-      const newTicketType = await this.ticketTypeRepository.create(ticketTypeData);
-      this.logger.log(`Successfully created ticket type with ID: ${newTicketType._id}`);
-      return this.mapToResponseDto(newTicketType);
-    } catch (error) {
-      this.logger.error(`Failed to create ticket type: ${error.message}`, error.stack);
-      throw error;
-    }
+    const newTicketType = await this.ticketTypeRepository.create(ticketTypeData);
+    this.logger.log(`Successfully created ticket type with ID: ${newTicketType._id}`);
+    return this.mapToResponseDto(newTicketType);
   }
 
   /**
@@ -339,64 +229,24 @@ export class TicketTypeService {
     userId: string,
     authenticatedOrganizationId: string,
   ): Promise<TicketTypeResponseDto> {
-    this.logger.log(
-      `User ${userId} attempting to update ticket type ${id} for organization ${authenticatedOrganizationId}`,
-    );
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('Invalid ticket type ID format.');
-    }
-
-    // 1. Retrieve existing ticket type
+    this.logger.log(`User ${userId} attempting to update ticket type ${id}`);
+    
     const existingTicketType = await this.ticketTypeRepository.findById(id);
     if (!existingTicketType || existingTicketType.isDeleted) {
-      throw new NotFoundException(`Ticket type with ID "${id}" not found or already deleted.`);
+      throw new NotFoundException(`Ticket type with ID "${id}" not found.`);
     }
 
-    // 2. Authorization Check: Ensure the authenticated user's organization owns this ticket type
     if (existingTicketType.organizationId.toString() !== authenticatedOrganizationId) {
       throw new ForbiddenException('You do not have permission to update this ticket type.');
     }
 
-    // 3. Validate Sales Dates (if updated)
-    const salesStartDate = updateTicketTypeDto.salesStartDate || existingTicketType.salesStartDate;
-    const salesEndDate = updateTicketTypeDto.salesEndDate || existingTicketType.salesEndDate;
-    const availableUntil = updateTicketTypeDto.availableUntil || existingTicketType.availableUntil;
-
-    if (salesStartDate && salesEndDate && salesStartDate >= salesEndDate) {
-      throw new BadRequestException('Sales start date must be before sales end date.');
-    }
-    if (availableUntil && salesEndDate && availableUntil > salesEndDate) {
-      throw new BadRequestException('Available until date cannot be after sales end date.');
-    }
-
-    // 4. Validate Discount Logic (if updated)
-    const discountType = updateTicketTypeDto.discountType || existingTicketType.discountType;
-    const discountValue = updateTicketTypeDto.discountValue !== undefined ? updateTicketTypeDto.discountValue : existingTicketType.discountValue;
-    const price = updateTicketTypeDto.price !== undefined ? updateTicketTypeDto.price : existingTicketType.price;
-
-    if (discountType === DiscountType.PERCENTAGE && (discountValue < 0 || discountValue > 100)) {
-      throw new BadRequestException('Percentage discount value must be between 0 and 100.');
-    }
-    if (discountType === DiscountType.FIXED_AMOUNT && discountValue > price) {
-      throw new BadRequestException('Fixed amount discount cannot be greater than the ticket price.');
-    }
-
-    // Prevent direct modification of quantitySold - this should only be updated via atomic operations
-    if (updateTicketTypeDto.quantitySold !== undefined) {
-      throw new BadRequestException('quantitySold cannot be directly modified.');
-    }
-
-    try {
-      const updateData = { ...updateTicketTypeDto, updatedBy: userId };
-      const updatedTicketType = await this.ticketTypeRepository.update(id, updateData);
-
-      this.logger.log(`Successfully updated ticket type with ID: ${id}`);
-      return this.mapToResponseDto(updatedTicketType);
-    } catch (error) {
-      this.logger.error(`Failed to update ticket type ${id}: ${error.message}`, error.stack);
-      throw error;
-    }
+    const updateData = { ...updateTicketTypeDto, updatedBy: userId };
+    const updatedTicketType = await this.ticketTypeRepository.update(id, updateData);
+    
+    this.logger.log(`Successfully updated ticket type with ID: ${id}`);
+    return this.mapToResponseDto(updatedTicketType);
   }
+
 
   /**
    * Soft-deletes a ticket type.
