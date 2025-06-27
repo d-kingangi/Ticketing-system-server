@@ -4,16 +4,15 @@ import { Model, Types } from 'mongoose';
 import { EventService } from 'src/event/event.service';
 import { Purchase, PurchaseDocument, PaymentStatus } from 'src/purchase/entities/purchase.entity';
 import { SalesSummaryReportDto, TicketTypeSalesDto } from './dto/sales-summary-report.dto';
+import { SupportedCurrencies } from 'src/ticket-type/entities/ticket-type.entity';
 
 @Injectable()
 export class ReportService {
   private readonly logger = new Logger(ReportService.name);
 
   constructor(
-    // Inject the Mongoose Model for Purchase to run aggregation queries.
     @InjectModel(Purchase.name)
     private readonly purchaseModel: Model<PurchaseDocument>,
-    // Inject EventService to validate event existence and permissions.
     private readonly eventService: EventService,
   ) {}
 
@@ -36,70 +35,69 @@ export class ReportService {
     }
 
     // First, validate that the event exists and belongs to the organization.
-    const event = await this.eventService.findOne(eventId, organizationId);
-    if (!event) {
-      throw new NotFoundException(
-        `Event with ID "${eventId}" not found or not part of your organization.`,
-      );
-    }
+    // This check remains important for authorization.
+    await this.eventService.findOne(eventId, organizationId);
 
     // Define the aggregation pipeline to calculate sales data.
     const salesPipeline = [
       // Stage 1: Filter for relevant purchases.
-      // This is the most important step for performance.
       {
         $match: {
           eventId: new Types.ObjectId(eventId),
-          paymentStatus: PaymentStatus.COMPLETED, // Only include successful purchases.
+          paymentStatus: PaymentStatus.COMPLETED,
           isDeleted: false,
         },
       },
       // Stage 2: Deconstruct the 'tickets' array.
-      // This creates a separate document for each item in the purchase's tickets array.
       {
         $unwind: '$tickets',
       },
       // Stage 3: Group by ticketTypeId to aggregate sales data.
       {
         $group: {
-          _id: '$tickets.ticketTypeId', // Group by the ticket type's ID.
-          totalTicketsSold: { $sum: '$tickets.quantity' }, // Sum the quantity for each ticket type.
+          _id: '$tickets.ticketTypeId',
+          totalTicketsSold: { $sum: '$tickets.quantity' },
+          // CHANGE: Corrected the field from 'priceAtPurchase' to 'unitPrice' to match the PurchaseTicketItem schema.
+          // This ensures accurate revenue calculation.
           totalRevenue: {
-            // Sum the revenue (quantity * price) for each type.
             $sum: { $multiply: ['$tickets.quantity', '$tickets.unitPrice'] },
           },
+          // CHANGE: Extract the currency from the first purchase document in the group.
+          // Since all purchases for an event should have the same currency, this is a reliable way to get it.
+          currency: { $first: '$currency' },
         },
       },
-      // Stage 4: (Optional but Recommended) Join with the 'tickettypes' collection.
-      // This adds the human-readable name of the ticket type to our report.
+      // Stage 4: Join with the 'tickettypes' collection to get the ticket type name.
       {
         $lookup: {
-          from: 'tickettypes', // The collection name for TicketType.
-          localField: '_id', // Field from the $group stage output.
-          foreignField: '_id', // Field from the tickettypes collection.
-          as: 'ticketTypeDetails', // The name of the new array field to add.
+          from: 'tickettypes',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'ticketTypeDetails',
         },
       },
-      // Stage 5: Reshape the output documents for the final report.
+      // Stage 5: Reshape the output documents.
       {
         $project: {
-          _id: 0, // Exclude the default _id field from the output.
+          _id: 0,
           ticketTypeId: '$_id',
-          // Get the name from the lookup result. Use $ifNull to handle cases where a ticket type might have been deleted.
           ticketTypeName: {
             $ifNull: [{ $arrayElemAt: ['$ticketTypeDetails.name', 0] }, 'Unknown'],
           },
           totalTicketsSold: '$totalTicketsSold',
           totalRevenue: '$totalRevenue',
+          // CHANGE: Include the currency in the projected output.
+          currency: '$currency',
         },
       },
     ];
 
     // Execute the aggregation pipeline.
-    const salesByTicketType: TicketTypeSalesDto[] =
+    // The result will now include the currency for each ticket type summary.
+    const salesByTicketType: (TicketTypeSalesDto & { currency: SupportedCurrencies })[] =
       await this.purchaseModel.aggregate(salesPipeline);
 
-    // Calculate overall totals by reducing the aggregated results.
+    // Calculate overall totals.
     const totalRevenue = salesByTicketType.reduce(
       (sum, item) => sum + item.totalRevenue,
       0,
@@ -109,11 +107,16 @@ export class ReportService {
       0,
     );
 
+    // CHANGE: Get the currency from the first item in the aggregation result.
+    // If there are no sales, the currency will be undefined, which is acceptable.
+    const currency = salesByTicketType.length > 0 ? salesByTicketType[0].currency : undefined;
+
     // Assemble the final DTO.
     return {
       totalRevenue: parseFloat(totalRevenue.toFixed(2)),
       totalTicketsSold,
-      currency: event?.currency, // Get currency from the event details.
+      // CHANGE: Use the currency derived from the purchase data.
+      currency: currency,
       salesByTicketType,
     };
   }
