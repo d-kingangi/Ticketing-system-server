@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DiscountType, SupportedCurrencies } from '../entities/ticket-type.entity';
+import { SupportedCurrencies } from '../entities/ticket-type.entity';
 
 export class TicketTypeResponseDto {
   @ApiProperty({ description: 'The unique identifier of the ticket type.' })
@@ -58,21 +58,6 @@ export class TicketTypeResponseDto {
 
   @ApiPropertyOptional({ description: 'Maximum number of tickets of this type a single user can purchase in total across all transactions.' })
   purchaseLimitPerUser?: number;
-
-  @ApiProperty({ description: 'Type of discount applied to this ticket type.' })
-  discountType: DiscountType;
-
-  @ApiProperty({ description: 'The value of the discount (amount for fixed, percentage for percentage).' })
-  discountValue: number;
-
-  @ApiPropertyOptional({ description: 'A promotional code required to apply this discount.' })
-  discountCode?: string;
-
-  @ApiPropertyOptional({ description: 'Minimum number of tickets required for this discount to apply.' })
-  minTicketsForDiscount?: number;
-
-  @ApiPropertyOptional({ description: 'Maximum amount that can be discounted if discountType is percentage.' })
-  maxDiscountAmount?: number;
 
   @ApiProperty({ description: 'Boolean flag indicating if the ticket type is soft-deleted.' })
   isDeleted: boolean;
