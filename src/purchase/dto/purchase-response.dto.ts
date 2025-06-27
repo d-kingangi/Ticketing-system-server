@@ -2,7 +2,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentStatus } from '../entities/purchase.entity';
 import { SupportedCurrencies } from '../../ticket-type/entities/ticket-type.entity';
 
-// Nested DTO for individual items within a purchase response
 export class PurchaseItemResponseDto {
   @ApiProperty({ description: 'The ID of the ticket type purchased.' })
   ticketTypeId: string;
@@ -10,18 +9,11 @@ export class PurchaseItemResponseDto {
   @ApiProperty({ description: 'The quantity of this ticket type purchased.' })
   quantity: number;
 
-  @ApiProperty({ description: 'The price per unit of this ticket type at the time of purchase.' })
+  @ApiProperty({ description: 'The final price per unit after any discounts.' })
   unitPrice: number;
 
-  @ApiPropertyOptional({ description: 'Whether a discount was applied to this line item.' })
-  discountApplied?: boolean;
-
-  @ApiPropertyOptional({ description: 'Details of the discount applied to this line item.' })
-  discountDetails?: {
-    type: string;
-    value: number;
-    code?: string;
-  };
+  @ApiProperty({ description: 'The total discount amount applied to this line item.' })
+  discountAmount: number;
 }
 
 // Nested DTO for payment details in a purchase response
@@ -45,24 +37,6 @@ export class PaymentDetailsResponseDto {
   paymentChannel?: string;
 }
 
-// Nested DTO for refund details in a purchase response
-// export class RefundDetailsResponseDto {
-//   @ApiProperty({ description: 'Unique ID for the refund transaction.' })
-//   refundId: string;
-
-//   @ApiProperty({ description: 'Amount refunded in this specific transaction.' })
-//   amount: number;
-
-//   @ApiProperty({ description: 'Date of the refund.' })
-//   refundDate: Date;
-
-//   @ApiPropertyOptional({ description: 'Reason for the refund.' })
-//   reason?: string;
-
-//   @ApiPropertyOptional({ description: 'ID of the user who processed the refund.' })
-//   processedBy?: string;
-// }
-
 export class PurchaseResponseDto {
   @ApiProperty({ description: 'The unique identifier of the purchase.' })
   id: string;
@@ -82,6 +56,12 @@ export class PurchaseResponseDto {
   @ApiProperty({ description: 'The total amount paid for this purchase.' })
   totalAmount: number;
 
+  @ApiPropertyOptional({ description: 'The ID of the discount that was applied to this purchase.' })
+  appliedDiscountId?: string;
+
+  @ApiPropertyOptional({ description: 'The total monetary value saved from the applied discount.' })
+  discountAmountSaved?: number;
+
   @ApiProperty({ description: 'The currency of the total amount.' })
   currency: SupportedCurrencies;
 
@@ -97,20 +77,14 @@ export class PurchaseResponseDto {
   @ApiProperty({ description: 'A flag indicating whether individual Ticket documents have been generated.' })
   ticketsGenerated: boolean;
 
-  @ApiPropertyOptional({ description: 'The IP address of the buyer at the time of purchase.' })
-  ipAddress?: string;
+  // @ApiPropertyOptional({ description: 'The IP address of the buyer at the time of purchase.' })
+  // ipAddress?: string;
 
-  @ApiPropertyOptional({ description: 'The User-Agent string of the buyer\'s device.' })
-  userAgent?: string;
+  // @ApiPropertyOptional({ description: 'The User-Agent string of the buyer\'s device.' })
+  // userAgent?: string;
 
-  @ApiPropertyOptional({ description: 'Any internal notes or remarks about the purchase.' })
-  notes?: string;
-
-//   @ApiProperty({ description: 'The total amount that has been refunded for this purchase.' })
-//   refundAmount: number;
-
-//   @ApiProperty({ description: 'An array to log individual refund transactions for this purchase.', type: [RefundDetailsResponseDto] })
-//   refunds: RefundDetailsResponseDto[];
+  // @ApiPropertyOptional({ description: 'Any internal notes or remarks about the purchase.' })
+  // notes?: string;
 
   @ApiProperty({ description: 'Boolean flag indicating if the purchase record is soft-deleted.' })
   isDeleted: boolean;
