@@ -6,6 +6,14 @@ import {
   CreateLocationDto,
 } from './create-organization.dto'; // Reusing nested DTOs for response
 
+export class SocialMediaLinkResponseDto {
+  @ApiProperty({ description: 'The social media platform (e.g., "Twitter", "Facebook")', example: 'Twitter' })
+  platform: string;
+
+  @ApiProperty({ description: 'The full URL to the organization\'s profile', example: 'https://twitter.com/acme_events' })
+  url: string;
+}
+
 export class OrganizationResponseDto {
   @ApiProperty({ description: 'The unique identifier of the organization.' })
   id: string;
@@ -34,6 +42,9 @@ export class OrganizationResponseDto {
   @ApiPropertyOptional({ description: 'Official website URL.' })
   websiteUrl?: string;
 
+  @ApiPropertyOptional({ description: 'Social media links for the organization', type: [SocialMediaLinkResponseDto] })
+  socialMediaLinks?: SocialMediaLinkResponseDto[];
+
   @ApiPropertyOptional({ description: 'Name of the primary contact person.' })
   primaryContact?: string;
 
@@ -42,6 +53,9 @@ export class OrganizationResponseDto {
 
   @ApiProperty({ description: 'Boolean flag indicating if the organization is active.' })
   isActive: boolean;
+
+  @ApiProperty({ description: 'Indicates if the organization is verified.', example: false })
+  isVerified: boolean;
 
   @ApiPropertyOptional({ description: 'Date when the organization\'s subscription/account expires.' })
   expiry_date?: Date;
