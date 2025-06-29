@@ -24,6 +24,12 @@ export class EventCategoryResponseDto {
     @ApiPropertyOptional({ description: 'A brief description of the event category.', example: 'Live music performances and shows.' })
     description?: string;
 
+    @ApiPropertyOptional({
+        description: 'URL for the category icon/image.',
+        example: 'https://example.com/icons/concert.png',
+    })
+    iconUrl?: string;
+    
     /**
      * Indicates whether the event category is active.
      */
