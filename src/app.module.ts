@@ -17,6 +17,7 @@ import { EventCategoryModule } from './event-category/event-category.module';
 import { DiscountModule } from './discount/discount.module';
 import { CustomerModule } from './customer/customer.module';
 import { ProductModule } from './product/product.module';
+import { ProductCategoryModule } from './product-category/product-category.module';
 
 @Module({
   imports: [
@@ -35,7 +36,8 @@ import { ProductModule } from './product/product.module';
     EventCategoryModule,
     DiscountModule,
     CustomerModule,
-    ProductModule, 
+    ProductModule,
+    ProductCategoryModule, 
   ],
   providers: [
     // Register JwtClientGuard as a global guard
