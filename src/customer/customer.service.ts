@@ -22,7 +22,7 @@ export class CustomerService {
     private _mapToResponseDto(customer: CustomerDocument): CustomerResponseDto {
         return {
             // --- Start of change: I've converted the Mongoose ObjectId to a string for the response.
-            id: customer._id.toHexString(),
+            id: customer._id.toString(),
             // --- End of change
             organizationId: customer.organizationId.toHexString(),
             fullName: customer.fullName,
@@ -114,7 +114,7 @@ export class CustomerService {
                 organizationId,
             );
             // --- Start of change: I've corrected the comparison to compare two strings, preventing a potential bug.
-            if (existingCustomer && existingCustomer._id.toHexString() !== id) {
+            if (existingCustomer && existingCustomer._id.toString() !== id) {
             // --- End of change
                 throw new ConflictException(
                     `Another customer with email "${updateCustomerDto.email}" already exists.`,
