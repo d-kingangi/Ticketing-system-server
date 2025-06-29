@@ -12,6 +12,9 @@ export class EventCategory extends BaseDocument {
     @Prop({ required: false, trim: true })
     description?: string;
 
+    @Prop({ required: false, trim: true })
+    iconUrl?: string;
+
     @Prop({ default: true })
     isActive: boolean;
 }
