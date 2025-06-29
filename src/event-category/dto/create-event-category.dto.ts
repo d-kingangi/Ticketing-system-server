@@ -3,7 +3,8 @@ import {
     IsNotEmpty,
     IsOptional,
     IsBoolean,
-    MinLength, // Added MinLength for potential name validation
+    MinLength,
+    IsUrl, // Added MinLength for potential name validation
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'; // Import Swagger decorators
 
@@ -25,6 +26,15 @@ export class CreateEventCategoryDto {
     @IsOptional() // Marks the field as optional
     @IsString() // Ensures the description is a string if provided
     description?: string;
+
+    @ApiPropertyOptional({
+        description: 'URL for the category icon/image.',
+        example: 'https://example.com/icons/concert.png',
+    })
+    @IsOptional()
+    @IsString()
+    @IsUrl({}, { message: 'iconUrl must be a valid URL.' })
+    iconUrl?: string;
 
     @ApiPropertyOptional({
         description: 'Indicates whether the event category is active. Defaults to true.',
