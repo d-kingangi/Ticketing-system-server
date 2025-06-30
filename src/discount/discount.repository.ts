@@ -61,6 +61,24 @@ export class DiscountRepository extends BaseRepository<DiscountDocument> {
   }
 
   /**
+   * Finds a discount by its code within a specific organization, regardless of its active status.
+   * This is useful for checking for duplicates before creating or updating a discount.
+   * @param code - The discount's code (case-insensitive).
+   * @param organizationId - The ID of the organization.
+   * @returns The discount document or null if not found.
+   */
+  async findByCodeAndOrg(
+    code: string,
+    organizationId: string,
+  ): Promise<DiscountDocument | null> {
+    return this.model.findOne({
+      code: { $regex: `^${code}$`, $options: 'i' },
+      organizationId: new Types.ObjectId(organizationId),
+    }).exec();
+  }
+
+
+  /**
    * Atomically increments the usage count of a discount.
    * This prevents race conditions where a code could be used more times than its limit.
    * @param id The ID of the discount to increment.
