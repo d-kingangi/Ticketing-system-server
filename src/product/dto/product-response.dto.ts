@@ -40,6 +40,24 @@ class VariationResponseDto {
 
     @ApiPropertyOptional({ example: 'https://example.com/images/tshirt-red-m.jpg' })
     imageUrl?: string;
+
+    @ApiPropertyOptional({ description: 'The sale price of the variation.', example: 19.99 })
+    salePrice?: number;
+
+    @ApiPropertyOptional({ description: 'The date when the sale price becomes active.', example: '2024-07-01T00:00:00Z' })
+    saleStartDate?: Date;
+
+    @ApiPropertyOptional({ description: 'The date when the sale price expires.', example: '2024-07-31T23:59:59Z' })
+    saleEndDate?: Date;
+
+    @ApiProperty({ description: 'Indicates if the variation is currently on sale.', example: true })
+    isOnSale: boolean;
+
+    @ApiProperty({ description: 'The current effective price (either sale price or regular price).', example: 19.99 })
+    currentPrice: number;
+
+    @ApiPropertyOptional({ description: 'The original price, shown for comparison when a sale is active.', example: 29.99 })
+    originalPrice?: number;
 }
 
 // --- End of change
@@ -84,6 +102,25 @@ export class ProductResponseDto {
 
     @ApiPropertyOptional({ example: 'https://example.com/images/coke.jpg' })
     imageUrl?: string;
+
+    @ApiPropertyOptional({ description: 'The sale price of the simple product.', example: 3.99 })
+    salePrice?: number;
+
+    @ApiPropertyOptional({ description: 'The date when the sale price becomes active.', example: '2024-07-01T00:00:00Z' })
+    saleStartDate?: Date;
+
+    @ApiPropertyOptional({ description: 'The date when the sale price expires.', example: '2024-07-31T23:59:59Z' })
+    saleEndDate?: Date;
+
+    // --- Computed fields for client convenience ---
+    @ApiPropertyOptional({ description: 'Indicates if the simple product is currently on sale.', example: true })
+    isOnSale?: boolean;
+
+    @ApiPropertyOptional({ description: 'The current effective price (either sale price or regular price).', example: 3.99 })
+    currentPrice?: number;
+
+    @ApiPropertyOptional({ description: 'The original price, shown for comparison when a sale is active.', example: 5.99 })
+    originalPrice?: number;
 
     // --- Variable Product Fields ---
     @ApiPropertyOptional({ type: [VariationOptionResponseDto] })
