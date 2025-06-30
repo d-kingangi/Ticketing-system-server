@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { BaseDocument } from '../../database/base.schema';
 import { DiscountType } from '../enum/discount-type.enum';
+import { DiscountScope } from '../enum/discount-scope.enum';
 
 export type DiscountDocument = HydratedDocument<Discount>;
 
@@ -43,16 +44,16 @@ export class Discount extends BaseDocument {
   /**
    * The ID of the event this discount is associated with.
    */
-  @Prop({ type: Types.ObjectId, ref: 'Event', required: true })
-  eventId: Types.ObjectId;
+  // @Prop({ type: Types.ObjectId, ref: 'Event', required: true })
+  // eventId: Types.ObjectId;
 
   /**
    * An array of TicketType IDs this discount applies to.
    * If this array is empty, the discount applies to ALL ticket types for the event.
    * If it has one or more IDs, it ONLY applies to those specific ticket types.
    */
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'TicketType' }], default: [] })
-  applicableTicketTypeIds: Types.ObjectId[];
+  // @Prop({ type: [{ type: Types.ObjectId, ref: 'TicketType' }], default: [] })
+  // applicableTicketTypeIds: Types.ObjectId[];
 
   /**
    * The total number of times this discount can be used across all purchases.
@@ -84,10 +85,44 @@ export class Discount extends BaseDocument {
    */
   @Prop({ required: true, default: true })
   isActive: boolean;
+
+  // --- Start of change: I've added a 'scope' and product-related fields to make the entity more generic.
+  @Prop({
+    type: String,
+    enum: Object.values(DiscountScope),
+    required: true,
+    index: true,
+    description: 'The scope of the discount (EVENT or PRODUCT).',
+  })
+  scope: DiscountScope;
+
+  /**
+   * The ID of the event this discount is associated with.
+   * This is now optional and should only be used when scope is 'EVENT'.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Event', required: false })
+  eventId?: Types.ObjectId;
+
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'TicketType' }], default: [] })
+  applicableTicketTypeIds: Types.ObjectId[];
+
+  /**
+   * An array of Product IDs this discount applies to.
+   * If scope is 'PRODUCT' and this is empty, it applies to all products.
+   */
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Product' }], default: [] })
+  applicableProductIds: Types.ObjectId[];
+
+  /**
+   * An array of ProductCategory IDs this discount applies to.
+   * If scope is 'PRODUCT', it applies to all products within these categories.
+   */
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'ProductCategory' }], default: [] })
+  applicableProductCategoryIds: Types.ObjectId[];
 }
 
 export const DiscountSchema = SchemaFactory.createForClass(Discount);
 
 // Index to quickly find a discount by its code for a specific event.
-DiscountSchema.index({ code: 1, eventId: 1 }, { unique: true });
+DiscountSchema.index({ code: 1, organizationId: 1 }, { unique: true });
 DiscountSchema.index({ organizationId: 1 });
