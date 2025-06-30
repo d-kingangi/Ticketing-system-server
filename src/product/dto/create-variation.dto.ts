@@ -10,8 +10,25 @@ import {
     IsArray,
     ArrayMinSize,
     IsUrl,
+    Validate,
+    IsDateString,
 } from 'class-validator';
 import { CreateVariationAttributeDto } from './create-variation-attribute.dto';
+import { ValidatorConstraint, ValidatorConstraintInterface, ValidationArguments } from 'class-validator';
+
+@ValidatorConstraint({ name: 'isLessThan', async: false })
+export class IsLessThanConstraint implements ValidatorConstraintInterface {
+    validate(value: any, args: ValidationArguments) {
+        const [relatedPropertyName] = args.constraints;
+        const relatedValue = (args.object as any)[relatedPropertyName];
+        return typeof value === 'number' && typeof relatedValue === 'number' && value < relatedValue;
+    }
+
+    defaultMessage(args: ValidationArguments) {
+        const [relatedPropertyName] = args.constraints;
+        return `$property must be less than ${relatedPropertyName}`;
+    }
+}
 
 /**
  * I've extracted the CreateVariationDto to its own file.
@@ -50,4 +67,21 @@ export class CreateVariationDto {
     @IsOptional()
     @IsUrl()
     imageUrl?: string;
+
+    @ApiPropertyOptional({ description: 'The sale price of the variation. Must be less than the regular price.', example: 19.99 })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Validate(IsLessThanConstraint, ['price']) // Ensures salePrice < price
+    salePrice?: number;
+
+    @ApiPropertyOptional({ description: 'The date when the sale price becomes active (ISO 8601 format).', example: '2024-07-01T00:00:00Z' })
+    @IsOptional()
+    @IsDateString()
+    saleStartDate?: Date;
+
+    @ApiPropertyOptional({ description: 'The date when the sale price expires (ISO 8601 format).', example: '2024-07-31T23:59:59Z' })
+    @IsOptional()
+    @IsDateString()
+    saleEndDate?: Date;
 }
