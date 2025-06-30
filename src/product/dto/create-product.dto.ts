@@ -15,10 +15,13 @@ import {
     ValidateIf,
     IsMongoId,
     IsUrl,
+    Validate,
+    IsDateString,
 } from 'class-validator';
 import { ProductType } from '../interfaces/product.interfaces';
 import { CreateVariationOptionDto } from './create-variation-option.dto';
 import { CreateVariationDto } from './create-variation.dto';
+import { IsLessThanConstraint } from './create-variation.dto';
 
 
 export class CreateProductDto {
@@ -107,6 +110,26 @@ export class CreateProductDto {
     @IsOptional()
     @IsUrl()
     imageUrl?: string;
+
+    @ApiPropertyOptional({ description: 'The sale price of a simple product. Must be less than the regular price.', example: 3.99 })
+    @ValidateIf(o => o.productType === ProductType.SIMPLE)
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Validate(IsLessThanConstraint, ['price']) // Ensures salePrice < price
+    salePrice?: number;
+
+    @ApiPropertyOptional({ description: 'The date when the sale price becomes active (ISO 8601 format).', example: '2024-07-01T00:00:00Z' })
+    @ValidateIf(o => o.productType === ProductType.SIMPLE)
+    @IsOptional()
+    @IsDateString()
+    saleStartDate?: Date;
+
+    @ApiPropertyOptional({ description: 'The date when the sale price expires (ISO 8601 format).', example: '2024-07-31T23:59:59Z' })
+    @ValidateIf(o => o.productType === ProductType.SIMPLE)
+    @IsOptional()
+    @IsDateString()
+    saleEndDate?: Date;
 
     @ApiPropertyOptional({ description: 'Whether the product is active and can be sold.', default: true })
     @IsOptional()
