@@ -11,8 +11,10 @@ import {
   IsMongoId,
   IsBoolean,
   ArrayNotEmpty,
+  ValidateIf,
 } from 'class-validator';
 import { DiscountType } from '../enum/discount-type.enum';
+import { DiscountScope } from '../enum/discount-scope.enum';
 
 export class CreateDiscountDto {
   @ApiProperty({ description: 'The unique, user-facing code.', example: 'SUMMER2024' })
@@ -35,19 +37,19 @@ export class CreateDiscountDto {
   @Min(0)
   discountValue: number;
 
-  @ApiProperty({ description: 'The ID of the event this discount applies to.' })
-  @IsMongoId()
-  @IsNotEmpty()
-  eventId: string;
+  // @ApiProperty({ description: 'The ID of the event this discount applies to.' })
+  // @IsMongoId()
+  // @IsNotEmpty()
+  // eventId: string;
 
-  @ApiPropertyOptional({
-    description: 'Array of TicketType IDs this applies to. If empty, applies to all tickets for the event.',
-    type: [String],
-  })
-  @IsOptional()
-  @IsArray()
-  @IsMongoId({ each: true })
-  applicableTicketTypeIds?: string[];
+  // @ApiPropertyOptional({
+  //   description: 'Array of TicketType IDs this applies to. If empty, applies to all tickets for the event.',
+  //   type: [String],
+  // })
+  // @IsOptional()
+  // @IsArray()
+  // @IsMongoId({ each: true })
+  // applicableTicketTypeIds?: string[];
 
   @ApiPropertyOptional({ description: 'Total number of times this code can be used.', example: 100 })
   @IsOptional()
@@ -69,4 +71,51 @@ export class CreateDiscountDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiProperty({
+    enum: DiscountScope,
+    description: "The scope of the discount: 'EVENT' or 'PRODUCT'.",
+  })
+  @IsEnum(DiscountScope)
+  @IsNotEmpty()
+  scope: DiscountScope;
+
+  @ApiPropertyOptional({
+    description: "The ID of the event. Required if scope is 'EVENT'.",
+  })
+  @ValidateIf(o => o.scope === DiscountScope.EVENT)
+  @IsNotEmpty()
+  @IsMongoId()
+  eventId?: string;
+
+  @ApiPropertyOptional({
+    description: "Array of TicketType IDs. If empty, applies to all tickets for the event. Only valid if scope is 'EVENT'.",
+    type: [String],
+  })
+  @ValidateIf(o => o.scope === DiscountScope.EVENT)
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  applicableTicketTypeIds?: string[];
+
+  @ApiPropertyOptional({
+    description: "Array of Product IDs. If empty, applies to all products. Only valid if scope is 'PRODUCT'.",
+    type: [String],
+  })
+  @ValidateIf(o => o.scope === DiscountScope.PRODUCT)
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  applicableProductIds?: string[];
+
+  @ApiPropertyOptional({
+    description: "Array of ProductCategory IDs. Applies to all products in these categories. Only valid if scope is 'PRODUCT'.",
+    type: [String],
+  })
+  @ValidateIf(o => o.scope === DiscountScope.PRODUCT)
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  applicableProductCategoryIds?: string[];
+
 }
