@@ -17,6 +17,9 @@ import { EventService } from '../event/event.service';
 import { OrganizationService } from '../organization/organization.service';
 import { TicketTypeService } from '../ticket-type/ticket-type.service';
 import { UpdateDiscountDto } from './dto/update-discount.dto';
+import { DiscountScope } from './enum/discount-scope.enum';
+import { ProductCategoryService } from 'src/product-category/product-category.service';
+import { ProductService } from 'src/product/product.service';
 
 @Injectable()
 export class DiscountService {
@@ -27,6 +30,8 @@ export class DiscountService {
     private readonly eventService: EventService,
     private readonly organizationService: OrganizationService,
     private readonly ticketTypeService: TicketTypeService,
+    private readonly productService: ProductService,
+    private readonly productCategoryService: ProductCategoryService
   ) { }
 
   /**
@@ -41,8 +46,11 @@ export class DiscountService {
       discountType: discount.discountType,
       discountValue: discount.discountValue,
       organizationId: discount.organizationId.toString(),
-      eventId: discount.eventId.toString(),
-      applicableTicketTypeIds: discount.applicableTicketTypeIds.map(id => id.toString()),
+      scope: discount.scope,
+      eventId: discount.eventId?.toString(), // eventId is now optional
+      applicableTicketTypeIds: discount.applicableTicketTypeIds?.map(id => id.toString()),
+      applicableProductIds: discount.applicableProductIds?.map(id => id.toString()),
+      applicableProductCategoryIds: discount.applicableProductCategoryIds?.map(id => id.toString()),
       usageLimit: discount.usageLimit,
       usageCount: discount.usageCount,
       startDate: discount.startDate,
@@ -51,7 +59,9 @@ export class DiscountService {
       isDeleted: discount.isDeleted,
       createdAt: discount.createdAt,
       updatedAt: discount.updatedAt,
+      updatedBy: discount.updatedBy?.toString(),
     };
+    // --- End of change
   }
 
   /**
@@ -62,43 +72,29 @@ export class DiscountService {
     userId: string,
     organizationId: string,
   ): Promise<DiscountResponseDto> {
-    const { eventId, code, applicableTicketTypeIds } = createDiscountDto;
-    this.logger.log(`User ${userId} creating discount "${code}" for event ${eventId}`);
+    const { code, scope } = createDiscountDto;
+    this.logger.log(`User ${userId} creating discount "${code}" with scope ${scope}`);
 
-    // 1. Verify the user is authorized for the organization of the event.
-    await this.organizationService.verifyUserInOrganization(userId, organizationId);
-    const event = await this.eventService.findOne(eventId, organizationId);
-    if (!event) {
-      throw new NotFoundException(`Event with ID "${eventId}" not found for your organization.`);
-    }
-
-    // 2. Check if a discount with the same code already exists for this event.
-    const existingDiscount = await this.discountRepository.findOne({
-      code: { $regex: `^${code}$`, $options: 'i' },
-      eventId: eventId,
-    });
+    // --- Start of change: The conflict check is now against the organization, not the event.
+    const existingDiscount = await this.discountRepository.findByCodeAndOrg(code, organizationId);
     if (existingDiscount) {
-      throw new ConflictException(`A discount with the code "${code}" already exists for this event.`);
+      throw new ConflictException(`A discount with the code "${code}" already exists for this organization.`);
     }
+    // --- End of change
 
-    // 3. If specific ticket types are provided, validate they belong to the event.
-    if (applicableTicketTypeIds && applicableTicketTypeIds.length > 0) {
-      // Fetch all ticket types for the event to validate against.
-      const ticketTypes = await this.ticketTypeService.findAll({ eventId }, organizationId);
-      const eventTicketTypeIds = new Set(ticketTypes.data.map(tt => tt.id));
-      for (const id of applicableTicketTypeIds) {
-        if (!eventTicketTypeIds.has(id)) {
-          throw new BadRequestException(`Ticket type with ID "${id}" does not belong to event "${eventId}".`);
-        }
-      }
+    // --- Start of change: I've added scope-based validation logic.
+    if (scope === DiscountScope.EVENT) {
+      await this.validateEventScope(createDiscountDto, organizationId);
+    } else if (scope === DiscountScope.PRODUCT) {
+      await this.validateProductScope(createDiscountDto, organizationId);
     }
+    // --- End of change
 
-    // 4. Create the discount.
     const newDiscount = await this.discountRepository.create({
       ...createDiscountDto,
       organizationId: new Types.ObjectId(organizationId),
-      eventId: new Types.ObjectId(eventId),
-      updatedBy: userId,
+      updatedBy: new Types.ObjectId(userId),
+      createdBy: new Types.ObjectId(userId),
     });
 
     return this.mapToResponseDto(newDiscount);
@@ -111,23 +107,26 @@ export class DiscountService {
     queryDto: FindAllDiscountsQueryDto,
     organizationId: string,
   ): Promise<PaginatedResponseDto<DiscountResponseDto>> {
-    const { page, limit, eventId, code, isActive, sortBy, sortDirection, includeDeleted } = queryDto;
+    const { page, limit, eventId, code, isActive, sortBy, sortDirection, includeDeleted, scope } = queryDto;
 
     const filter: FilterQuery<DiscountDocument> = {
       organizationId: new Types.ObjectId(organizationId),
     };
 
+    // --- Start of change: I've added filtering by the new 'scope' property.
+    if (scope) filter.scope = scope;
+    // --- End of change
     if (eventId) filter.eventId = new Types.ObjectId(eventId);
     if (code) filter.code = { $regex: code, $options: 'i' };
     if (isActive !== undefined) filter.isActive = isActive;
-    if (!includeDeleted) filter.isDeleted = false;
+    if (!includeDeleted) filter.isDeleted = { $ne: true };
 
     const sort = { [sortBy]: sortDirection === 'asc' ? 1 : -1 };
 
     const paginatedResult = await this.discountRepository.findWithPagination(filter, page, limit, sort);
 
     return new PaginatedResponseDto({
-      data: paginatedResult.data.map(this.mapToResponseDto),
+      data: paginatedResult.data.map(d => this.mapToResponseDto(d)),
       total: paginatedResult.total,
       currentPage: paginatedResult.page,
       totalPages: paginatedResult.pages,
@@ -141,16 +140,13 @@ export class DiscountService {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid discount ID format.');
     }
-
     const discount = await this.discountRepository.findOne({
-      _id: id,
-      organizationId: organizationId,
+      _id: new Types.ObjectId(id),
+      organizationId: new Types.ObjectId(organizationId),
     });
-
     if (!discount) {
       throw new NotFoundException(`Discount with ID "${id}" not found for your organization.`);
     }
-
     return this.mapToResponseDto(discount);
   }
 
@@ -165,28 +161,71 @@ export class DiscountService {
   ): Promise<DiscountResponseDto> {
     this.logger.log(`User ${userId} updating discount ${id}`);
 
-    // 1. Verify the discount exists and belongs to the user's organization.
-    const existingDiscount = await this.findOne(id, organizationId);
+    const existingDiscount = await this.discountRepository.findById(id);
+    if (!existingDiscount || existingDiscount.organizationId.toString() !== organizationId) {
+      throw new NotFoundException(`Discount with ID "${id}" not found for your organization.`);
+    }
 
-    // 2. If the code is being changed, check for uniqueness within the event.
-    if (updateDiscountDto.code && updateDiscountDto.code.toUpperCase() !== existingDiscount.code) {
-      const conflictingDiscount = await this.discountRepository.findOne({
-        code: { $regex: `^${updateDiscountDto.code}$`, $options: 'i' },
-        eventId: existingDiscount.eventId,
-        _id: { $ne: id },
-      });
-      if (conflictingDiscount) {
-        throw new ConflictException(`A discount with the code "${updateDiscountDto.code}" already exists for this event.`);
+    // --- Start of change: I've added logic to prevent changing the scope and to re-validate IDs on update.
+    if (updateDiscountDto.scope && updateDiscountDto.scope !== existingDiscount.scope) {
+      throw new BadRequestException('Cannot change the scope of an existing discount.');
+    }
+
+    if (updateDiscountDto.code && updateDiscountDto.code.toUpperCase() !== existingDiscount.code.toUpperCase()) {
+      const conflictingDiscount = await this.discountRepository.findByCodeAndOrg(updateDiscountDto.code, organizationId);
+      if (conflictingDiscount && conflictingDiscount._id.toString() !== id) {
+        throw new ConflictException(`A discount with the code "${updateDiscountDto.code}" already exists for this organization.`);
       }
     }
 
-    // 3. Perform the update.
+    if (existingDiscount.scope === DiscountScope.EVENT) {
+      await this.validateEventScope(updateDiscountDto, organizationId, existingDiscount.eventId.toString());
+    } else if (existingDiscount.scope === DiscountScope.PRODUCT) {
+      await this.validateProductScope(updateDiscountDto, organizationId);
+    }
+    // --- End of change
+
     const updatedDiscount = await this.discountRepository.update(id, {
       ...updateDiscountDto,
-      updatedBy: userId,
+      updatedBy: new Types.ObjectId(userId),
     });
 
     return this.mapToResponseDto(updatedDiscount);
+  }
+
+  private async validateProductScope(dto: CreateDiscountDto | UpdateDiscountDto, organizationId: string) {
+    if (dto.eventId) {
+      throw new BadRequestException('eventId cannot be specified for PRODUCT scope discounts.');
+    }
+    if (dto.applicableProductIds && dto.applicableProductIds.length > 0) {
+      // This assumes a method exists in ProductService to validate multiple IDs at once.
+      await this.productService.validateProductIdsExist(dto.applicableProductIds, organizationId);
+    }
+    if (dto.applicableProductCategoryIds && dto.applicableProductCategoryIds.length > 0) {
+      // This assumes a method exists in ProductCategoryService to validate multiple IDs at once.
+      await this.productCategoryService.validateCategoryIdsExist(dto.applicableProductCategoryIds, organizationId);
+    }
+  }
+
+  // --- Start of change: I've added private helper methods for scope-specific validation.
+  private async validateEventScope(dto: CreateDiscountDto | UpdateDiscountDto, organizationId: string, existingEventId?: string) {
+    const eventId = dto.eventId || existingEventId;
+    if (!eventId) {
+      throw new BadRequestException('eventId is required for EVENT scope discounts.');
+    }
+    await this.eventService.findOne(eventId, organizationId); // Validates event exists and belongs to org
+
+    if (dto.applicableTicketTypeIds && dto.applicableTicketTypeIds.length > 0) {
+      // In a real-world scenario, you would fetch all ticket types for the event and validate against them.
+      // For now, we assume ticketTypeService.findAll can handle this.
+      const ticketTypes = await this.ticketTypeService.findAll({ eventId }, organizationId);
+      const eventTicketTypeIds = new Set(ticketTypes.data.map(tt => tt.id));
+      for (const id of dto.applicableTicketTypeIds) {
+        if (!eventTicketTypeIds.has(id)) {
+          throw new BadRequestException(`Ticket type with ID "${id}" does not belong to event "${eventId}".`);
+        }
+      }
+    }
   }
 
   /**
@@ -236,6 +275,23 @@ export class DiscountService {
     // match the `applicableTicketTypeIds` on the discount.
     // For now, we just return the valid discount document.
     return discount;
+  }
+
+  async validateCode(
+    code: string,
+    organizationId: string,
+  ): Promise<DiscountResponseDto> {
+    this.logger.log(`Validating discount code "${code}" for organization ${organizationId}`);
+    const discount = await this.discountRepository.findActiveByCodeAndOrg(code, organizationId);
+
+    if (!discount) {
+      throw new BadRequestException('The provided discount code is invalid, expired, or has reached its usage limit.');
+    }
+
+    // The calling service (e.g., PurchaseService) will receive this DTO
+    // and must perform the final check to see if the discount's scope and applicable IDs
+    // match any items in the user's cart.
+    return this.mapToResponseDto(discount);
   }
 
   /**
