@@ -110,7 +110,7 @@ export class DiscountController {
    * Soft-deletes a discount.
    * Restricted to Agents and Admins of the same organization.
    */
-  @Delete(':id/soft')
+  @Delete(':id')
   @Roles(UserRole.AGENT, UserRole.ADMIN)
   @ApiOperation({ summary: 'Soft delete a discount' })
   @ApiParam({ name: 'id', description: 'The ID of the discount to soft-delete.' })
