@@ -3,6 +3,7 @@ import {
     ConflictException,
     NotFoundException,
     Logger,
+    BadRequestException,
 } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { CreateProductCategoryDto } from './dto/create-product-category.dto';
@@ -19,7 +20,7 @@ export class ProductCategoryService {
 
     constructor(
         private readonly productCategoryRepository: ProductCategoryRepository,
-    ) {}
+    ) { }
 
     /**
      * I've created a private helper method to map a database document to a response DTO.
@@ -137,6 +138,55 @@ export class ProductCategoryService {
             organizationId,
         );
         return this._mapToResponseDto(category);
+    }
+
+    /**
+     * I've added this method to validate that a list of category IDs exist and belong to the specified organization.
+     * This is a crucial utility for other services, like the DiscountService, that need to reference product categories.
+     * It throws a BadRequestException if any of the IDs are invalid or not found.
+     * @param categoryIds - An array of product category IDs to validate.
+     * @param organizationId - The ID of the organization to scope the check to.
+     * @throws BadRequestException if any IDs are invalid or not found.
+     */
+    async validateCategoryIdsExist(
+        categoryIds: string[],
+        organizationId: string,
+    ): Promise<void> {
+        if (!categoryIds || categoryIds.length === 0) {
+            return; // Nothing to validate, so we can exit early.
+        }
+
+        // I'm using a Set to efficiently handle any duplicate IDs passed in the array.
+        const uniqueCategoryIds = new Set(categoryIds);
+        const objectIdCategoryIds = [...uniqueCategoryIds].map(id => {
+            if (!Types.ObjectId.isValid(id)) {
+                throw new BadRequestException(`Invalid category ID format: ${id}`);
+            }
+            return new Types.ObjectId(id);
+        });
+
+        // I'm fetching only the _id field for an efficient query, as we only need to check for existence.
+        const foundCategories = await this.productCategoryRepository.findAll(
+            {
+                _id: { $in: objectIdCategoryIds },
+                organizationId: new Types.ObjectId(organizationId),
+                isDeleted: { $ne: true }, // Ensure we don't validate against soft-deleted categories.
+            },
+            { _id: 1 }, // Projection to return only the _id.
+        );
+
+        // If the number of found categories doesn't match the number of unique IDs, some are missing.
+        if (foundCategories.length !== uniqueCategoryIds.size) {
+            const foundIds = new Set(
+                foundCategories.map(cat => cat._id.toString()),
+            );
+            const notFoundIds = [...uniqueCategoryIds].filter(
+                id => !foundIds.has(id),
+            );
+            throw new BadRequestException(
+                `The following product category IDs were not found or do not belong to your organization: ${notFoundIds.join(', ')}`,
+            );
+        }
     }
 
     /**
