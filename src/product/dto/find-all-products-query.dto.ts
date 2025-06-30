@@ -57,6 +57,12 @@ export class FindAllProductsQueryDto {
     @IsBoolean()
     isActive?: boolean;
 
+    @ApiPropertyOptional({ description: 'Filter for products that are currently on sale.', type: Boolean, example: true })
+    @IsOptional()
+    @Transform(({ value }) => value === 'true' || value === true)
+    @IsBoolean()
+    onSale?: boolean;
+
     @ApiPropertyOptional({ description: 'Include soft-deleted products in the result.', type: Boolean, default: false })
     @IsOptional()
     @Transform(({ value }) => value === 'true' || value === true)
