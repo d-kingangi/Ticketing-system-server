@@ -9,6 +9,7 @@ import {
   Min,
   IsMongoId,
 } from 'class-validator';
+import { DiscountScope } from '../enum/discount-scope.enum';
 
 /**
  * DTO for querying discounts with pagination, sorting, and filtering.
@@ -51,6 +52,15 @@ export class FindAllDiscountsQueryDto {
   @IsOptional()
   @IsEnum(['asc', 'desc'])
   sortDirection?: 'asc' | 'desc' = 'desc';
+
+  @ApiPropertyOptional({
+    description: 'Filter by discount scope.',
+    enum: DiscountScope,
+    example: DiscountScope.PRODUCT,
+  })
+  @IsOptional()
+  @IsEnum(DiscountScope)
+  scope?: DiscountScope;
 
   @ApiPropertyOptional({ description: 'Filter by event ID.', example: '60c72b2f9b1d4c001c8e4a02' })
   @IsOptional()
