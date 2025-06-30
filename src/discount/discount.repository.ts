@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, FilterQuery, UpdateQuery, Types } from 'mongoose';
 import { BaseRepository } from '../database/base.repository';
 import { Discount, DiscountDocument } from './entities/discount.entity';
+import { DiscountScope } from './enum/discount-scope.enum';
 
 @Injectable()
 export class DiscountRepository extends BaseRepository<DiscountDocument> {
@@ -39,6 +40,51 @@ export class DiscountRepository extends BaseRepository<DiscountDocument> {
     };
 
     // I've separated the logic for limited and unlimited discounts for clarity.
+    // This filter finds discounts with a usage limit that has not been reached.
+    const limitedFilter: FilterQuery<DiscountDocument> = {
+      ...baseFilter,
+      usageLimit: { $exists: true },
+      $expr: { $lt: ['$usageCount', '$usageLimit'] },
+    };
+
+    // This filter finds discounts with no usage limit.
+    const unlimitedFilter: FilterQuery<DiscountDocument> = {
+      ...baseFilter,
+      usageLimit: { $exists: false },
+    };
+
+    // The final query finds a discount that matches EITHER the limited or unlimited criteria.
+    return this.model
+      .findOne({
+        $or: [limitedFilter, unlimitedFilter],
+      })
+      .exec();
+  }
+
+  /**
+ * Finds a single, active, and valid discount for a specific event.
+ * This is useful for the `validateAndApplyDiscount` service method.
+ * @param code The user-facing discount code (case-insensitive).
+ * @param eventId The ID of the event the discount must be associated with.
+ * @returns The discount document, or null if not found or not valid.
+ */
+  async findByCodeAndEvent(
+    code: string,
+    eventId: string,
+  ): Promise<DiscountDocument | null> {
+    const now = new Date();
+
+    // I've created a base filter that applies to all discount checks for a specific event.
+    const baseFilter: FilterQuery<DiscountDocument> = {
+      code: { $regex: `^${code}$`, $options: 'i' },
+      eventId: new Types.ObjectId(eventId),
+      scope: DiscountScope.EVENT, // I'm ensuring we only find event-scoped discounts.
+      isActive: true,
+      isDeleted: { $ne: true },
+      startDate: { $lte: now },
+      endDate: { $gte: now },
+    };
+
     // This filter finds discounts with a usage limit that has not been reached.
     const limitedFilter: FilterQuery<DiscountDocument> = {
       ...baseFilter,
