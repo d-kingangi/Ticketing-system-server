@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, FilterQuery, UpdateQuery } from 'mongoose';
+import { Model, FilterQuery, UpdateQuery, Types } from 'mongoose';
 import { BaseRepository } from '../database/base.repository';
 import { Discount, DiscountDocument } from './entities/discount.entity';
 
@@ -22,40 +22,42 @@ export class DiscountRepository extends BaseRepository<DiscountDocument> {
    * @param eventId The ID of the event the discount must be associated with.
    * @returns The discount document, or null if not found or not active.
    */
-  async findByCodeAndEvent(code: string, eventId: string): Promise<DiscountDocument | null> {
+  async findActiveByCodeAndOrg(
+    code: string,
+    organizationId: string,
+  ): Promise<DiscountDocument | null> {
     const now = new Date();
-    const filter: FilterQuery<DiscountDocument> = {
-      // Match the code case-insensitively.
+
+    // I've created a base filter that applies to all discount checks.
+    const baseFilter: FilterQuery<DiscountDocument> = {
       code: { $regex: `^${code}$`, $options: 'i' },
-      eventId: eventId,
+      organizationId: new Types.ObjectId(organizationId),
       isActive: true,
-      isDeleted: false,
-      // Ensure the current date is within the discount's valid period.
+      isDeleted: { $ne: true },
       startDate: { $lte: now },
       endDate: { $gte: now },
-      // Ensure the usage limit has not been reached.
-      // This uses a MongoDB expression to compare two fields in the document.
+    };
+
+    // I've separated the logic for limited and unlimited discounts for clarity.
+    // This filter finds discounts with a usage limit that has not been reached.
+    const limitedFilter: FilterQuery<DiscountDocument> = {
+      ...baseFilter,
+      usageLimit: { $exists: true },
       $expr: { $lt: ['$usageCount', '$usageLimit'] },
     };
 
-    // A special case for discounts without a usage limit.
-    // We need to handle this separately because the $expr above would fail.
-    const filterWithoutUsageLimit: FilterQuery<DiscountDocument> = {
-      ...filter,
-      usageLimit: { $exists: false }, // Find documents where usageLimit is not set.
+    // This filter finds discounts with no usage limit.
+    const unlimitedFilter: FilterQuery<DiscountDocument> = {
+      ...baseFilter,
+      usageLimit: { $exists: false },
     };
-    // Remove the $expr from the original filter if we are checking for unlimited usage.
-    delete filter.$expr;
 
-
-    // Try to find a discount that has a usage limit and is not yet exhausted,
-    // OR find a discount that has no usage limit.
-    return this.model.findOne({
-      $or: [
-        filter,
-        filterWithoutUsageLimit,
-      ],
-    }).exec();
+    // The final query finds a discount that matches EITHER the limited or unlimited criteria.
+    return this.model
+      .findOne({
+        $or: [limitedFilter, unlimitedFilter],
+      })
+      .exec();
   }
 
   /**
