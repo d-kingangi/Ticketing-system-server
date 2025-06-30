@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DiscountType } from '../enum/discount-type.enum';
+import { DiscountScope } from '../enum/discount-scope.enum';
 
 /**
  * DTO for representing a Discount in API responses.
@@ -25,6 +26,9 @@ export class DiscountResponseDto {
   @ApiProperty({ description: 'The ID of the organization this discount belongs to.', example: '60c72b2f9b1d4c001c8e4a01' })
   organizationId: string;
 
+  @ApiProperty({ enum: DiscountScope, description: 'The scope of the discount (EVENT or PRODUCT).' })
+  scope: DiscountScope;
+
   @ApiProperty({ description: 'The ID of the event this discount is associated with.', example: '60c72b2f9b1d4c001c8e4a02' })
   eventId: string;
 
@@ -34,6 +38,21 @@ export class DiscountResponseDto {
     example: ['60c72b2f9b1d4c001c8e4a03', '60c72b2f9b1d4c001c8e4a04'],
   })
   applicableTicketTypeIds: string[];
+
+  @ApiPropertyOptional({
+    description: "Array of Product IDs this discount applies to. If empty, applies to all products. Only present if scope is 'PRODUCT'.",
+    type: [String],
+    example: ['655b65a1e8a3d4c5e6f7g8h8'],
+  })
+  applicableProductIds?: string[];
+
+  @ApiPropertyOptional({
+    description: "Array of ProductCategory IDs this discount applies to. Applies to all products in these categories. Only present if scope is 'PRODUCT'.",
+    type: [String],
+    example: ['654a3b2c1d0e9f8a7b6c5d4e'],
+  })
+  applicableProductCategoryIds?: string[];
+
 
   @ApiPropertyOptional({ description: 'Total number of times this discount can be used across all purchases.', example: 100 })
   usageLimit?: number;
