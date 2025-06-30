@@ -68,6 +68,24 @@ export class Product extends BaseDocument {
     @Prop({ required: false, trim: true })
     imageUrl?: string;
 
+    /**
+ * The sale price of a simple product. If set, this price should be used instead of the regular price.
+ */
+    @Prop({ required: false, min: 0 })
+    salePrice?: number;
+
+    /**
+     * The date when the sale price becomes active.
+     */
+    @Prop({ required: false })
+    saleStartDate?: Date;
+
+    /**
+     * The date when the sale price expires.
+     */
+    @Prop({ required: false })
+    saleEndDate?: Date;
+
     // --- Fields for VARIABLE products ---
     // These are optional and will only be present when productType is 'variable'.
     @Prop({ type: [VariationOptionSchemaFactory], default: undefined })
