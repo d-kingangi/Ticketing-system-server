@@ -161,8 +161,8 @@ export class ProductService {
             ...createDto,
             organizationId: new Types.ObjectId(organizationId),
             productCategoryId: new Types.ObjectId(createDto.productCategoryId), // <-- fix here
-            createdBy: new Types.ObjectId(userId),
-            updatedBy: new Types.ObjectId(userId),
+            createdBy: userId,   
+            updatedBy: userId,
         };
 
         const createdProduct = await this.productRepository.create(newProductData);
