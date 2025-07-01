@@ -29,6 +29,31 @@ export class PurchaseTicketItem {
 
 export const PurchaseTicketItemSchema = SchemaFactory.createForClass(PurchaseTicketItem);
 
+// --- Start of new implementation ---
+// I've created a new schema to represent a product item within a purchase.
+@Schema({ _id: false })
+export class PurchaseProductItem {
+  @Prop({ type: Types.ObjectId, ref: 'Product', required: true })
+  productId: Types.ObjectId;
+
+  // This field is optional and will only be present for 'variable' products.
+  // It references the specific variation within the Product's 'variations' array.
+  @Prop({ type: Types.ObjectId, required: false })
+  variationId?: Types.ObjectId;
+
+  @Prop({ required: true, min: 1 })
+  quantity: number;
+
+  @Prop({ required: true, min: 0 })
+  unitPrice: number; // The price per product *after* any applicable discount.
+
+  @Prop({ required: true, default: 0 })
+  discountAmount: number;
+}
+
+export const PurchaseProductItemSchema = SchemaFactory.createForClass(PurchaseProductItem);
+
+
 export type PurchaseDocument = HydratedDocument<Purchase>;
 
 @Schema({ timestamps: true }) // Ensure createdAt and updatedAt are automatically managed
@@ -42,8 +67,12 @@ export class Purchase extends BaseDocument {
   @Prop({ type: Types.ObjectId, ref: 'Organization', required: true })
   organizationId: Types.ObjectId;
 
-  @Prop({ type: [PurchaseTicketItemSchema], required: true })
-  tickets: PurchaseTicketItem[];
+  @Prop({ type: [PurchaseTicketItemSchema], default: [] })
+  ticketItems: PurchaseTicketItem[];
+
+  // I've added a new property to store product items in the purchase.
+  @Prop({ type: [PurchaseProductItemSchema], default: [] })
+  productItems: PurchaseProductItem[];
 
 
   @Prop({ required: true, min: 0 })
