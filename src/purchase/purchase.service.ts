@@ -1,17 +1,23 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
-import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import { BadRequestException, ConflictException, ForbiddenException, forwardRef, Inject, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
+import { CreatePurchaseDto, PurchaseProductItemDto } from './dto/create-purchase.dto';
 import { Types, FilterQuery } from 'mongoose';
 import { EventService } from 'src/event/event.service';
 import { PaginatedResponseDto } from 'src/shared/dto/paginated-response.dto';
 import { TicketTypeService } from 'src/ticket-type/ticket-type.service';
 import { FindAllPurchasesQueryDto } from './dto/find-all-purchase-query.dto';
 import { PurchaseResponseDto } from './dto/purchase-response.dto';
-import { PurchaseDocument, PaymentStatus, PurchaseTicketItem } from './entities/purchase.entity';
+import { PurchaseDocument, PaymentStatus, PurchaseTicketItem, PurchaseProductItem } from './entities/purchase.entity';
 import { PurchaseRepository } from './purchase.repository';
 import { UsersService } from 'src/users/users.service';
 import { DiscountService } from 'src/discount/discount.service';
 import { DiscountDocument } from '../discount/entities/discount.entity'; // CHANGE: Import DiscountDocument
 import { DiscountType } from 'src/discount/enum/discount-type.enum';
+import { TicketService } from 'src/ticket/ticket.service';
+import { ProductService } from 'src/product/product.service';
+import { TicketStatus } from 'src/ticket/entities/ticket.entity';
+import { ProductType } from 'src/product/interfaces/product.interfaces';
+import { ProductDocument } from 'src/product/entities/product.entity';
+import { DiscountScope } from 'src/discount/enum/discount-scope.enum';
 
 @Injectable()
 export class PurchaseService {
@@ -21,10 +27,12 @@ export class PurchaseService {
     private readonly purchaseRepository: PurchaseRepository,
     private readonly eventService: EventService,
     private readonly ticketTypeService: TicketTypeService,
-    private readonly usersService: UsersService, // Assuming a UserService for buyer validation
-    private readonly discountService: DiscountService, // CHANGE: Inject DiscountService
+    private readonly usersService: UsersService,
+    private readonly discountService: DiscountService,
+    private readonly productService: ProductService,
+    @Inject(forwardRef(() => TicketService))
+    private readonly ticketService: TicketService,
 
-    // private readonly ticketService: TicketService, // TODO: Inject TicketService when implemented for ticket generation
   ) { }
 
   /**
@@ -37,11 +45,20 @@ export class PurchaseService {
     return {
       id: purchase._id.toString(),
       buyerId: purchase.buyerId.toString(),
-      eventId: purchase.eventId.toString(),
+      // I've made eventId optional in the response.
+      eventId: purchase.eventId?.toString(),
       organizationId: purchase.organizationId.toString(),
-      // CHANGE: Map the simplified ticket item structure.
-      tickets: purchase.tickets.map((item) => ({
+      // I've renamed 'tickets' to 'ticketItems' for consistency.
+      ticketItems: purchase.ticketItems.map((item) => ({
         ticketTypeId: item.ticketTypeId.toString(),
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discountAmount: item.discountAmount,
+      })),
+      // I've added the mapping for the new 'productItems'.
+      productItems: purchase.productItems.map((item) => ({
+        productId: item.productId.toString(),
+        variationId: item.variationId?.toString(),
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         discountAmount: item.discountAmount,
@@ -50,7 +67,6 @@ export class PurchaseService {
       currency: purchase.currency,
       paymentStatus: purchase.paymentStatus,
       paymentMethod: purchase.paymentMethod,
-      // CHANGE: Add the new discount-related fields to the response.
       appliedDiscountId: purchase.appliedDiscountId?.toString(),
       discountAmountSaved: purchase.discountAmountSaved,
       paymentDetails: purchase.paymentDetails
@@ -71,117 +87,102 @@ export class PurchaseService {
     };
   }
 
-
   /**
-   * Initiates a new purchase. This involves validating ticket types, calculating total,
-   * reserving inventory, and creating a PENDING purchase record.
-   * @param createPurchaseDto DTO containing purchase details.
-   * @param buyerId The ID of the user making the purchase.
-   * @param ipAddress The IP address of the buyer.
-   * @param userAgent The user agent string of the buyer's device.
-   * @returns The created purchase record.
-   * @throws BadRequestException for invalid data or insufficient tickets.
-   * @throws NotFoundException if event or ticket types are not found.
-   * @throws ConflictException if tickets are oversold.
-   */
+ * Initiates a new purchase for tickets and/or products.
+ */
   async create(
     createPurchaseDto: CreatePurchaseDto,
     buyerId: string,
-    ipAddress?: string,
-    userAgent?: string,
   ): Promise<PurchaseResponseDto> {
-    const { eventId, tickets, discountCode } = createPurchaseDto;
-    this.logger.log(`User ${buyerId} creating purchase for event ${eventId} with code: ${discountCode || 'N/A'}`);
+    const { eventId, ticketItems = [], productItems = [], discountCode } = createPurchaseDto;
+    this.logger.log(`User ${buyerId} creating purchase with ${ticketItems.length} ticket types and ${productItems.length} product types.`);
 
-    // 1. Validate Buyer and Event
-    const buyer = await this.usersService.findOne(buyerId);
-    if (!buyer) {
-      throw new NotFoundException(`Buyer with ID "${buyerId}" not found.`);
-    }
-    const event = await this.eventService.findOnePublic(eventId);
-    if (!event) {
-      throw new NotFoundException(`Event with ID "${eventId}" not found.`);
+    // I'm validating that the cart is not empty.
+    if (ticketItems.length === 0 && productItems.length === 0) {
+      throw new BadRequestException('A purchase must contain at least one ticket or product.');
     }
 
-    // --- CHANGE: Validate discount code BEFORE processing tickets ---
-    let validDiscount: DiscountDocument | null = null;
-    if (discountCode) {
-      try {
-        // Use the discount service to find and validate the code for the given event.
-        // This will throw an error if the code is invalid, expired, or used up.
-        validDiscount = await this.discountService.validateAndApplyDiscount(discountCode, eventId);
-        this.logger.log(`Applying valid discount ${validDiscount.code} to purchase.`);
-      } catch (error) {
-        this.logger.warn(`Invalid discount code "${discountCode}" attempted for event ${eventId}: ${error.message}`);
-        throw new BadRequestException(error.message);
-      }
+    // I'm validating that eventId is present if tickets are being purchased.
+    if (ticketItems.length > 0 && !eventId) {
+      throw new BadRequestException('eventId is required when purchasing tickets.');
     }
 
-    // 2. Process Ticket Items and Calculate Total
+    // I'm fetching the buyer to ensure they exist.
+    await this.usersService.findOne(buyerId);
+
+    // I'm determining the organization and currency from the first available item in the cart.
+    const { organizationId, currency } = await this.getOrgAndCurrency(eventId, productItems);
+
+    // I'm validating the discount code against the organization.
+    const validDiscount = discountCode
+      ? await this.discountService.validateCode(discountCode, organizationId)
+      : null;
+
     let subtotal = 0;
     let totalDiscountAmount = 0;
-    const purchaseItems: PurchaseTicketItem[] = [];
-    const firstTicketType = await this.ticketTypeService.findOne(tickets[0].ticketTypeId);
-    const commonCurrency = firstTicketType.currency;
+    const processedTicketItems: PurchaseTicketItem[] = [];
+    const processedProductItems: PurchaseProductItem[] = [];
 
-    for (const itemDto of tickets) {
-      const ticketType = await this.ticketTypeService.findOne(itemDto.ticketTypeId);
+    // I'm processing ticket items if they exist.
+    if (ticketItems.length > 0) {
+      for (const itemDto of ticketItems) {
+        const ticketType = await this.ticketTypeService.findOne(itemDto.ticketTypeId, organizationId);
+        if (ticketType.eventId !== eventId) throw new BadRequestException(`Ticket type ${ticketType.id} does not belong to event ${eventId}.`);
+        if (ticketType.currency !== currency) throw new BadRequestException('All items in a purchase must have the same currency.');
+        if (ticketType.quantity < itemDto.quantity) throw new ConflictException(`Not enough tickets for "${ticketType.name}".`);
 
-      if (ticketType.currency !== commonCurrency) {
-        throw new BadRequestException('All ticket types in a single purchase must have the same currency.');
+        const { finalUnitPrice, itemDiscount } = this.calculateItemDiscount(ticketType.price, validDiscount, { ticketTypeId: ticketType.id });
+        subtotal += ticketType.price * itemDto.quantity;
+        totalDiscountAmount += itemDiscount * itemDto.quantity;
+
+        processedTicketItems.push({
+          ticketTypeId: new Types.ObjectId(itemDto.ticketTypeId),
+          quantity: itemDto.quantity,
+          unitPrice: finalUnitPrice,
+          discountAmount: itemDiscount * itemDto.quantity,
+        });
       }
-      if (ticketType.quantity < itemDto.quantity) {
-        throw new ConflictException(`Not enough tickets available for "${ticketType.name}". Available: ${ticketType.quantity}`);
-      }
-      // ... (other ticket type validations like sales dates, active status, etc.)
-
-      const basePrice = ticketType.price;
-      let itemDiscountValue = 0;
-
-      // --- CHANGE: Apply discount logic to each item ---
-      if (validDiscount) {
-        const isApplicable =
-          validDiscount.applicableTicketTypeIds.length === 0 || // Applies to all ticket types
-          validDiscount.applicableTicketTypeIds.some(id => id.toString() === ticketType.id);
-
-        if (isApplicable) {
-          if (validDiscount.discountType === DiscountType.FIXED_AMOUNT) {
-            itemDiscountValue = validDiscount.discountValue;
-          } else if (validDiscount.discountType === DiscountType.PERCENTAGE) {
-            itemDiscountValue = basePrice * (validDiscount.discountValue / 100);
-          }
-        }
-      }
-
-      const finalUnitPrice = Math.max(0, basePrice - itemDiscountValue);
-      const totalItemDiscount = (basePrice - finalUnitPrice) * itemDto.quantity;
-
-      purchaseItems.push({
-        ticketTypeId: new Types.ObjectId(itemDto.ticketTypeId),
-        quantity: itemDto.quantity,
-        unitPrice: parseFloat(finalUnitPrice.toFixed(2)),
-        discountAmount: parseFloat(totalItemDiscount.toFixed(2)),
-      });
-
-      subtotal += basePrice * itemDto.quantity;
-      totalDiscountAmount += totalItemDiscount;
     }
 
-    const finalTotalAmount = subtotal - totalDiscountAmount;
+    // I'm processing product items if they exist.
+    if (productItems.length > 0) {
+      for (const itemDto of productItems) {
+        const product = await this.productService.findDocById(itemDto.productId, organizationId);
+        if (product.currency !== currency) throw new BadRequestException('All items in a purchase must have the same currency.');
 
-    // 3. Create Purchase Record
+        const { price, variation } = this.getProductPriceAndVariation(product, itemDto);
+        if (variation && variation.quantity < itemDto.quantity) throw new ConflictException(`Not enough stock for product variation "${variation.sku}".`);
+        if (!variation && product.quantity < itemDto.quantity) throw new ConflictException(`Not enough stock for product "${product.name}".`);
+
+        const { finalUnitPrice, itemDiscount } = this.calculateItemDiscount(price, validDiscount, { productId: product.id, categoryId: product.productCategoryId.toString() });
+        subtotal += price * itemDto.quantity;
+        totalDiscountAmount += itemDiscount * itemDto.quantity;
+
+        processedProductItems.push({
+          productId: new Types.ObjectId(itemDto.productId),
+          variationId: variation ? new Types.ObjectId(variation._id) : undefined,
+          quantity: itemDto.quantity,
+          unitPrice: finalUnitPrice,
+          discountAmount: itemDiscount * itemDto.quantity,
+        });
+      }
+    }
+
+    // I'm creating the final purchase record in the database.
     const newPurchase = await this.purchaseRepository.create({
       buyerId: new Types.ObjectId(buyerId),
-      eventId: new Types.ObjectId(eventId),
-      organizationId: new Types.ObjectId(event.organizationId),
-      tickets: purchaseItems,
-      totalAmount: parseFloat(finalTotalAmount.toFixed(2)),
-      currency: commonCurrency,
+      eventId: eventId ? new Types.ObjectId(eventId) : undefined,
+      organizationId: new Types.ObjectId(organizationId),
+      ticketItems: processedTicketItems,
+      productItems: processedProductItems,
+      totalAmount: subtotal - totalDiscountAmount,
+      currency,
       paymentStatus: PaymentStatus.PENDING,
       paymentMethod: createPurchaseDto.paymentMethod,
-      // CHANGE: Store discount information in the purchase record.
-      appliedDiscountId: validDiscount ? validDiscount._id : undefined,
-      discountAmountSaved: parseFloat(totalDiscountAmount.toFixed(2)),
+      appliedDiscountId: validDiscount ? new Types.ObjectId(validDiscount.id) : undefined,
+      discountAmountSaved: totalDiscountAmount,
+      createdBy: buyerId,
+      updatedBy: buyerId,
     });
 
     this.logger.log(`Purchase ${newPurchase._id} created with PENDING status.`);
@@ -204,31 +205,30 @@ export class PurchaseService {
     }
 
     if (newPaymentStatus === PaymentStatus.COMPLETED && purchase.paymentStatus !== PaymentStatus.COMPLETED) {
-      // Decrement ticket inventory
-      for (const item of purchase.tickets) {
+      // I'm decrementing stock for both tickets and products.
+      for (const item of purchase.ticketItems) {
         await this.ticketTypeService.incrementQuantitySold(item.ticketTypeId.toString(), item.quantity);
       }
-
-      // --- CHANGE: Increment discount usage count on successful payment ---
-      if (purchase.appliedDiscountId) {
-        try {
-          await this.discountService.incrementUsageCount(purchase.appliedDiscountId.toString());
-          this.logger.log(`Incremented usage count for discount ${purchase.appliedDiscountId}`);
-        } catch (error) {
-          this.logger.error(`Failed to increment usage count for discount ${purchase.appliedDiscountId}: ${error.message}`);
-          // This is a non-critical error for the user, but should be logged for admins.
-          // The purchase should still succeed.
-        }
+      for (const item of purchase.productItems) {
+        await this.productService.decrementStock(item.productId.toString(), item.quantity, item.variationId?.toString());
       }
-      // TODO: Trigger ticket generation
+
+      if (purchase.appliedDiscountId) {
+        await this.discountService.incrementUsageCount(purchase.appliedDiscountId.toString());
+      }
+      // I'm now generating the individual ticket documents.
+      await this.ticketService.generateTicketsForPurchase(purchase);
+
     } else if (newPaymentStatus === PaymentStatus.REFUNDED && purchase.paymentStatus !== PaymentStatus.REFUNDED) {
-      // Increment ticket inventory back
-      for (const item of purchase.tickets) {
+      // I'm incrementing stock back for both tickets and products.
+      for (const item of purchase.ticketItems) {
         await this.ticketTypeService.decrementQuantitySold(item.ticketTypeId.toString(), item.quantity);
       }
-      // Business Decision: We are NOT decrementing the discount usage count on refund
-      // to prevent abuse of limited-use codes.
-      // TODO: Invalidate generated tickets
+      for (const item of purchase.productItems) {
+        await this.productService.incrementStock(item.productId.toString(), item.quantity, item.variationId?.toString());
+      }
+      // I'm now invalidating the previously generated tickets.
+      await this.ticketService.invalidateTicketsByPurchaseId(purchase.id, TicketStatus.REFUNDED, purchase.updatedBy);
     }
 
     const updatedPurchase = await this.purchaseRepository.updatePaymentStatus(
@@ -238,6 +238,71 @@ export class PurchaseService {
     );
 
     return this.mapToResponseDto(updatedPurchase);
+  }
+
+  private async getOrgAndCurrency(eventId?: string, productItems?: PurchaseProductItemDto[]): Promise<{ organizationId: string, currency: SupportedCurrencies }> {
+    if (eventId) {
+      const event = await this.eventService.findOnePublic(eventId);
+      return { organizationId: event.organizationId, currency: event.currency };
+    }
+    if (productItems && productItems.length > 0) {
+      const product = await this.productService.findDocById(productItems[0].productId);
+      return { organizationId: product.organizationId.toString(), currency: product.currency };
+    }
+    throw new InternalServerErrorException('Could not determine organization and currency for the purchase.');
+  }
+
+  /**
+   * I've created this helper to get the correct price and variation from a product DTO.
+   */
+  private getProductPriceAndVariation(product: ProductDocument, itemDto: PurchaseProductItemDto): { price: number, variation?: Variation } {
+    if (product.productType === ProductType.SIMPLE) {
+      return { price: this.productService.getCurrentPrice(product) };
+    }
+    if (product.productType === ProductType.VARIABLE) {
+      if (!itemDto.variationId) throw new BadRequestException(`variationId is required for variable product ${product.name}.`);
+      const variation = product.variations.find(v => v._id.toString() === itemDto.variationId);
+      if (!variation) throw new NotFoundException(`Variation with ID ${itemDto.variationId} not found in product ${product.name}.`);
+      return { price: this.productService.getCurrentPrice(product, variation), variation };
+    }
+    throw new InternalServerErrorException('Unsupported product type encountered.');
+  }
+
+
+  /**
+   * I've refactored the discount calculation into its own reusable method.
+   */
+  private calculateItemDiscount(
+    basePrice: number,
+    discount: DiscountDocument | null,
+    item: { ticketTypeId?: string, productId?: string, categoryId?: string }
+  ): { finalUnitPrice: number, itemDiscount: number } {
+    let itemDiscountValue = 0;
+    if (discount) {
+      const isApplicable =
+        (discount.scope === DiscountScope.EVENT &&
+          item.ticketTypeId &&
+          (discount.applicableTicketTypeIds.length === 0 ||
+            discount.applicableTicketTypeIds.map(id => id.toString()).includes(item.ticketTypeId))) ||
+        (discount.scope === DiscountScope.PRODUCT &&
+          item.productId &&
+          (
+            (discount.applicableProductIds.length === 0 && discount.applicableProductCategoryIds.length === 0) ||
+            discount.applicableProductIds.map(id => id.toString()).includes(item.productId) ||
+            (item.categoryId && discount.applicableProductCategoryIds.map(id => id.toString()).includes(item.categoryId))
+          ));
+
+      if (isApplicable) {
+        if (discount.discountType === DiscountType.FIXED_AMOUNT) {
+          itemDiscountValue = discount.discountValue;
+        } else if (discount.discountType === DiscountType.PERCENTAGE) {
+          itemDiscountValue = basePrice * (discount.discountValue / 100);
+        }
+      }
+    }
+    const finalUnitPrice = Math.max(0, basePrice - itemDiscountValue);
+    const itemDiscount = basePrice - finalUnitPrice;
+    return { finalUnitPrice, itemDiscount };
   }
 
 
@@ -267,13 +332,12 @@ export class PurchaseService {
 
     if (eventId) filter.eventId = new Types.ObjectId(eventId);
     if (paymentStatus) filter.paymentStatus = paymentStatus;
-    // CHANGE: Add filtering by the applied discount ID.
     if (appliedDiscountId) filter.appliedDiscountId = new Types.ObjectId(appliedDiscountId);
 
     const paginatedResult = await this.purchaseRepository.findWithPagination(filter, page, limit);
 
     return new PaginatedResponseDto({
-      data: paginatedResult.data.map(this.mapToResponseDto),
+      data: paginatedResult.data.map(p => this.mapToResponseDto(p)),
       total: paginatedResult.total,
       currentPage: paginatedResult.page,
       totalPages: paginatedResult.pages,
@@ -302,8 +366,8 @@ export class PurchaseService {
       throw new BadRequestException('Invalid purchase ID format.');
     }
 
-    const filter: FilterQuery<PurchaseDocument> = { _id: id };
-    if (!includeDeleted) filter.isDeleted = false;
+    const filter: FilterQuery<PurchaseDocument> = { _id: new Types.ObjectId(id) };
+    if (!includeDeleted) filter.isDeleted = { $ne: true };
 
     const purchase = await this.purchaseRepository.findOne(filter);
 
@@ -311,12 +375,9 @@ export class PurchaseService {
       throw new NotFoundException(`Purchase with ID "${id}" not found.`);
     }
 
-    // Authorization Check:
-    // 1. If authenticatedUserId is provided (customer), ensure they are the buyer.
     if (authenticatedUserId && purchase.buyerId.toString() !== authenticatedUserId) {
       throw new ForbiddenException('You do not have permission to access this purchase.');
     }
-    // 2. If authenticatedOrganizationId is provided (agent), ensure purchase belongs to their organization.
     if (authenticatedOrganizationId && purchase.organizationId.toString() !== authenticatedOrganizationId) {
       throw new ForbiddenException('You do not have permission to access this purchase.');
     }
@@ -335,42 +396,19 @@ export class PurchaseService {
    */
   async softDelete(id: string, userId: string): Promise<{ message: string }> {
     this.logger.log(`User ${userId} attempting to soft-delete purchase ${id}`);
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('Invalid purchase ID format.');
-    }
-
-    const existingPurchase = await this.purchaseRepository.findById(id);
-    if (!existingPurchase || existingPurchase.isDeleted) {
-      throw new NotFoundException(`Purchase with ID "${id}" not found or already deleted.`);
-    }
-
-    // Additional authorization checks can be added here (e.g., only admin or buyer can soft delete)
-    // For now, assuming controller handles roles.
-
-    await this.purchaseRepository.softDelete(id, userId);
+    const purchase = await this.findOne(id, undefined, undefined, true); // Find it first to ensure it exists
+    await this.purchaseRepository.softDelete(purchase.id, userId);
     this.logger.log(`Successfully soft-deleted purchase with ID: ${id}`);
     return { message: `Purchase with ID "${id}" has been successfully deleted.` };
   }
 
   /**
-   * Permanently deletes a purchase record. Use with extreme caution.
-   * This method should typically be restricted to ADMIN roles.
-   * @param id The ID of the purchase to permanently delete.
-   * @returns A success message.
-   * @throws BadRequestException if the ID format is invalid.
-   * @throws NotFoundException if the purchase is not found.
+   * Permanently deletes a purchase record.
    */
   async hardDelete(id: string): Promise<{ message: string }> {
     this.logger.log(`Attempting to permanently delete purchase with ID: ${id}`);
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('Invalid purchase ID format.');
-    }
-
-    const deletedPurchase = await this.purchaseRepository.delete(id);
-
-    if (!deletedPurchase) {
-      throw new NotFoundException(`Purchase with ID "${id}" not found for permanent deletion.`);
-    }
+    const purchase = await this.findOne(id, undefined, undefined, true); // Find it first
+    await this.purchaseRepository.delete(purchase.id);
     this.logger.log(`Successfully permanently deleted purchase with ID: ${id}`);
     return { message: `Purchase with ID "${id}" has been permanently deleted.` };
   }
@@ -417,56 +455,35 @@ export class PurchaseService {
       throw new BadRequestException(`Refund amount exceeds total purchase amount. Max refundable: ${purchase.totalAmount - purchase.refundAmount}`);
     }
 
-    // Update inventory for all ticket types in the purchase
-    // This assumes a full refund of all tickets. For partial refunds,
-    // you'd need to specify which tickets are being refunded.
-    for (const item of purchase.tickets) {
-      try {
-        await this.ticketTypeService.decrementQuantitySold(
-          item.ticketTypeId.toString(),
-          item.quantity,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Failed to update inventory for ticket type ${item.ticketTypeId} during refund ${purchaseId}: ${error.message}`,
-          error.stack,
-        );
-        throw new InternalServerErrorException(
-          `Failed to update ticket inventory during refund for purchase ${purchaseId}. Manual intervention required.`,
-        );
-      }
-    }
+    // I'm calling the updatePaymentStatus method to handle inventory restoration and ticket invalidation.
+    const updatedPurchase = await this.updatePaymentStatus(purchaseId, PaymentStatus.REFUNDED);
 
-    // Record refund details
+    // I'm now adding the specific refund transaction details.
     const newRefund = {
-      refundId: new Types.ObjectId().toHexString(), // Generate a unique ID for this refund
+      refundId: new Types.ObjectId().toHexString(),
       amount: refundAmount,
       refundDate: new Date(),
       reason: reason,
       processedBy: new Types.ObjectId(processedByUserId),
     };
 
-    const updatedPurchase = await this.purchaseRepository.update(
+    const finalPurchase = await this.purchaseRepository.update(
       purchaseId,
       {
         $set: {
-          paymentStatus: PaymentStatus.REFUNDED, // Mark as refunded
           refundAmount: purchase.refundAmount + refundAmount,
           updatedBy: processedByUserId,
         },
-        $push: { refunds: newRefund }, // Add refund details to the array
+        $push: { refunds: newRefund },
       },
     );
 
-    if (!updatedPurchase) {
+    if (!finalPurchase) {
       throw new NotFoundException(`Purchase with ID "${purchaseId}" not found during refund update.`);
     }
 
-    // TODO: Invalidate/cancel generated tickets here (call TicketService.invalidateTickets)
-    // await this.ticketService.invalidateTickets(purchaseId, processedByUserId);
-
     this.logger.log(`Purchase ${purchaseId} successfully refunded ${refundAmount}.`);
-    return this.mapToResponseDto(updatedPurchase);
+    return this.mapToResponseDto(finalPurchase);
   }
 
   /**
