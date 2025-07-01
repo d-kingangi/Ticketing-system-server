@@ -80,21 +80,29 @@ export class DiscountService {
     if (existingDiscount) {
       throw new ConflictException(`A discount with the code "${code}" already exists for this organization.`);
     }
-    // --- End of change
 
-    // --- Start of change: I've added scope-based validation logic.
     if (scope === DiscountScope.EVENT) {
       await this.validateEventScope(createDiscountDto, organizationId);
     } else if (scope === DiscountScope.PRODUCT) {
       await this.validateProductScope(createDiscountDto, organizationId);
     }
-    // --- End of change
+
+    const {
+      eventId,
+      applicableTicketTypeIds,
+      applicableProductIds,
+      applicableProductCategoryIds,
+      ...rest
+    } = createDiscountDto;
 
     const newDiscount = await this.discountRepository.create({
-      ...createDiscountDto,
+      ...rest,
+      ...(eventId && { eventId: new Types.ObjectId(eventId) }),
+      applicableTicketTypeIds: (applicableTicketTypeIds || []).map(id => new Types.ObjectId(id)),
+      applicableProductIds: (applicableProductIds || []).map(id => new Types.ObjectId(id)),
+      applicableProductCategoryIds: (applicableProductCategoryIds || []).map(id => new Types.ObjectId(id)),
       organizationId: new Types.ObjectId(organizationId),
       updatedBy: userId,
-      createdBy: userId,
     });
 
     return this.mapToResponseDto(newDiscount);
