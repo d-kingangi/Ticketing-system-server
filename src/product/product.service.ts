@@ -160,6 +160,7 @@ export class ProductService {
         const newProductData = {
             ...createDto,
             organizationId: new Types.ObjectId(organizationId),
+            productCategoryId: new Types.ObjectId(createDto.productCategoryId), // <-- fix here
             createdBy: new Types.ObjectId(userId),
             updatedBy: new Types.ObjectId(userId),
         };
@@ -335,7 +336,9 @@ export class ProductService {
             });
         } else if (product.productType === ProductType.VARIABLE) {
             if (!variationId) throw new BadRequestException('variationId is required for variable products.');
-            const variation = product.variations.find(v => v._id.toString() === variationId);
+            const variation = (product.variations as VariationDocument[]).find(
+                v => v._id.toString() === variationId
+            );
             if (!variation) throw new NotFoundException('Variation not found.');
             if (variation.quantity < quantity) {
                 throw new ConflictException('Not enough stock for product variation.');
