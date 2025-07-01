@@ -181,7 +181,7 @@ export class PurchaseService {
       paymentMethod: createPurchaseDto.paymentMethod,
       appliedDiscountId: validDiscount ? new Types.ObjectId(validDiscount.id) : undefined,
       discountAmountSaved: totalDiscountAmount,
-      createdBy: buyerId,
+      // createdBy: buyerId,
       updatedBy: buyerId,
     });
 
