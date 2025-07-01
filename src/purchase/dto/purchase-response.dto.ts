@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentStatus } from '../entities/purchase.entity';
 import { SupportedCurrencies } from '../../ticket-type/entities/ticket-type.entity';
 
-export class PurchaseItemResponseDto {
+export class PurchaseTicketItemResponseDto {
   @ApiProperty({ description: 'The ID of the ticket type purchased.' })
   ticketTypeId: string;
 
@@ -15,6 +15,24 @@ export class PurchaseItemResponseDto {
   @ApiProperty({ description: 'The total discount amount applied to this line item.' })
   discountAmount: number;
 }
+
+export class PurchaseProductItemResponseDto {
+  @ApiProperty({ description: 'The ID of the product purchased.' })
+  productId: string;
+
+  @ApiPropertyOptional({ description: 'The ID of the specific product variation purchased.' })
+  variationId?: string;
+
+  @ApiProperty({ description: 'The quantity of this product purchased.' })
+  quantity: number;
+
+  @ApiProperty({ description: 'The final price per unit after any discounts.' })
+  unitPrice: number;
+
+  @ApiProperty({ description: 'The total discount amount applied to this line item.' })
+  discountAmount: number;
+}
+
 
 // Nested DTO for payment details in a purchase response
 export class PaymentDetailsResponseDto {
@@ -50,8 +68,12 @@ export class PurchaseResponseDto {
   @ApiProperty({ description: 'The ID of the organization that owns the event.' })
   organizationId: string;
 
-  @ApiProperty({ description: 'An array detailing the ticket types and quantities purchased.', type: [PurchaseItemResponseDto] })
-  tickets: PurchaseItemResponseDto[];
+  @ApiPropertyOptional({ description: 'An array detailing the ticket types and quantities purchased.', type: [PurchaseTicketItemResponseDto] })
+  ticketItems?: PurchaseTicketItemResponseDto[];
+
+  // I've added the new 'productItems' property.
+  @ApiPropertyOptional({ description: 'An array detailing the products and quantities purchased.', type: [PurchaseProductItemResponseDto] })
+  productItems?: PurchaseProductItemResponseDto[];
 
   @ApiProperty({ description: 'The total amount paid for this purchase.' })
   totalAmount: number;
