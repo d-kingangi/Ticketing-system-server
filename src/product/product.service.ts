@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductRepository } from './product.repository';
@@ -9,6 +9,7 @@ import { ProductType } from './interfaces/product.interfaces';
 import { Types } from 'mongoose';
 import { FindAllProductsQueryDto } from './dto/find-all-products-query.dto';
 import { PaginatedResponseDto } from 'src/shared/dto/paginated-response.dto';
+import { VariationDocument } from './entities/variation.entity';
 
 @Injectable()
 export class ProductService {
@@ -263,6 +264,105 @@ export class ProductService {
             );
         }
     }
+
+    /**
+ * Finds a product document by ID and organization, throws if not found.
+ */
+    async findDocById(
+        productId: string,
+        organizationId?: string,
+    ): Promise<ProductDocument> {
+        if (!Types.ObjectId.isValid(productId)) {
+            throw new BadRequestException(`Invalid product ID: ${productId}`);
+        }
+        const product = organizationId
+            ? await this.productRepository.findByIdAndOrg(productId, organizationId)
+            : await this.productRepository.findById(productId);
+        if (!product) {
+            throw new NotFoundException(`Product with ID "${productId}" not found.`);
+        }
+        return product;
+    }
+
+    /**
+ * Returns the current price for a product or a specific variation, considering sales.
+ */
+    getCurrentPrice(
+        product: ProductDocument,
+        variation?: VariationDocument,
+    ): number {
+        const now = new Date();
+        // Helper to check if sale is active
+        const isSaleActive = (
+            salePrice?: number,
+            startDate?: Date,
+            endDate?: Date,
+        ): boolean =>
+            salePrice != null &&
+            (!startDate || startDate <= now) &&
+            (!endDate || endDate >= now);
+
+        if (variation) {
+            if (isSaleActive(variation.salePrice, variation.saleStartDate, variation.saleEndDate)) {
+                return variation.salePrice!;
+            }
+            return variation.price;
+        } else if (product.productType === ProductType.SIMPLE) {
+            if (isSaleActive(product.salePrice, product.saleStartDate, product.saleEndDate)) {
+                return product.salePrice!;
+            }
+            return product.price;
+        }
+        throw new BadRequestException('getCurrentPrice: Invalid product or variation context.');
+    }
+
+
+    /**
+ * Decrements stock for a product or its variation.
+ */
+    async decrementStock(
+        productId: string,
+        quantity: number,
+        variationId?: string,
+    ): Promise<void> {
+        const product = await this.findDocById(productId);
+        if (product.productType === ProductType.SIMPLE) {
+            if (product.quantity < quantity) {
+                throw new ConflictException('Not enough stock for product.');
+            }
+            await this.productRepository.update(productId, {
+                $inc: { quantity: -quantity },
+            });
+        } else if (product.productType === ProductType.VARIABLE) {
+            if (!variationId) throw new BadRequestException('variationId is required for variable products.');
+            const variation = product.variations.find(v => v._id.toString() === variationId);
+            if (!variation) throw new NotFoundException('Variation not found.');
+            if (variation.quantity < quantity) {
+                throw new ConflictException('Not enough stock for product variation.');
+            }
+            await this.productRepository.updateVariationStock(productId, variationId, -quantity);
+        }
+    }
+
+    /**
+     * Increments stock for a product or its variation.
+     */
+    async incrementStock(
+        productId: string,
+        quantity: number,
+        variationId?: string,
+    ): Promise<void> {
+        const product = await this.findDocById(productId);
+        if (product.productType === ProductType.SIMPLE) {
+            await this.productRepository.update(productId, {
+                $inc: { quantity: quantity },
+            });
+        } else if (product.productType === ProductType.VARIABLE) {
+            if (!variationId) throw new BadRequestException('variationId is required for variable products.');
+            await this.productRepository.updateVariationStock(productId, variationId, quantity);
+        }
+    }
+
 
     /**
      * Updates an existing product.
