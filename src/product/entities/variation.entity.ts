@@ -1,6 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { VariationAttribute } from '../interfaces/product.interfaces';
 import { VariationAttributeSchemaFactory } from './variation-attribute.entity';
+import { HydratedDocument } from 'mongoose';
+
+
+export type VariationDocument = HydratedDocument<Variation>;
 
 /**
  * I've extracted the Variation schema into its own file for clarity.
