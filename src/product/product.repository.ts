@@ -179,4 +179,31 @@ export class ProductRepository extends BaseRepository<ProductDocument> {
             organizationId: new Types.ObjectId(organizationId),
         }).exec();
     }
+
+    /**
+ * Atomically increments or decrements the stock of a specific variation in a variable product.
+ * @param productId - The ID of the product.
+ * @param variationId - The ID of the variation.
+ * @param delta - The amount to increment (positive) or decrement (negative).
+ */
+    async updateVariationStock(
+        productId: string,
+        variationId: string,
+        delta: number,
+    ): Promise<void> {
+        const result = await this.productModel.updateOne(
+            {
+                _id: new Types.ObjectId(productId),
+                'variations._id': new Types.ObjectId(variationId),
+            },
+            {
+                $inc: { 'variations.$.quantity': delta },
+            }
+        );
+        if (result.modifiedCount === 0) {
+            throw new NotFoundException(
+                `Variation with ID "${variationId}" not found in product "${productId}".`
+            );
+        }
+    }
 }
