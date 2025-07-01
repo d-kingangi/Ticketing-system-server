@@ -10,11 +10,12 @@ import {
   ArrayMinSize,
   IsEnum,
   IsOptional,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 // Nested DTO for individual items within a purchase
-export class PurchaseItemDto {
+export class PurchaseTicketItemDto {
   @ApiProperty({ description: 'The ID of the ticket type being purchased.', example: '60c72b2f9b1d4c001c8e4a03' })
   @IsMongoId()
   @IsNotEmpty()
@@ -27,22 +28,56 @@ export class PurchaseItemDto {
   quantity: number;
 }
 
+export class PurchaseProductItemDto {
+  @ApiProperty({ description: 'The ID of the product being purchased.', example: '655b65a1e8a3d4c5e6f7g8h8' })
+  @IsMongoId()
+  @IsNotEmpty()
+  productId: string;
+
+  // This is optional, only for 'variable' products.
+  @ApiPropertyOptional({ description: 'The ID of the specific product variation.', example: '655b65a1e8a3d4c5e6f7g8h9' })
+  @IsOptional()
+  @IsMongoId()
+  variationId?: string;
+
+  @ApiProperty({ description: 'The quantity of this product to purchase.', example: 1 })
+  @IsNumber()
+  @Min(1)
+  @IsNotEmpty()
+  quantity: number;
+}
+
+
 export class CreatePurchaseDto {
   @ApiProperty({ description: 'The ID of the event for which tickets are being purchased.', example: '60c72b2f9b1d4c001c8e4a01' })
   @IsMongoId()
   @IsNotEmpty()
   eventId: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'An array of ticket types and quantities to purchase.',
-    type: [PurchaseItemDto],
-    minItems: 1,
+    type: [PurchaseTicketItemDto],
   })
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
-  @Type(() => PurchaseItemDto)
-  tickets: PurchaseItemDto[];
+  @Type(() => PurchaseTicketItemDto)
+  ticketItems?: PurchaseTicketItemDto[];
+
+  // I've added the new 'productItems' property, also optional.
+  // The service layer will be responsible for ensuring that at least one of 'ticketItems' or 'productItems' is provided.
+  @ApiPropertyOptional({
+    description: 'An array of products and quantities to purchase.',
+    type: [PurchaseProductItemDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => PurchaseProductItemDto)
+  productItems?: PurchaseProductItemDto[];
+
 
   @ApiProperty({ description: 'The payment method chosen by the buyer (e.g., "M-Pesa", "Card", "PayPal").', example: 'M-Pesa' })
   @IsString()
