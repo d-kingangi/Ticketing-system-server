@@ -93,8 +93,8 @@ export class DiscountService {
     const newDiscount = await this.discountRepository.create({
       ...createDiscountDto,
       organizationId: new Types.ObjectId(organizationId),
-      updatedBy: new Types.ObjectId(userId),
-      createdBy: new Types.ObjectId(userId),
+      updatedBy: userId,
+      createdBy: userId,
     });
 
     return this.mapToResponseDto(newDiscount);
