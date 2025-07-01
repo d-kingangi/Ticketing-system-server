@@ -10,15 +10,14 @@ import { FindAllTicketsQueryDto } from './dto/find-all-ticket-query.dto';
 import { TicketResponseDto } from './dto/ticket-response.dto';
 import { TicketDocument, TicketStatus } from './entities/ticket.entity';
 import { TicketRepository } from './ticket.repository';
-// Utility to generate unique codes (e.g., for ticketCode)
 import { nanoid } from 'nanoid';
-// Utility for QR code generation (example, you might use a dedicated library or service)
 import * as QRCode from 'qrcode';
 import { UsersService } from 'src/users/users.service';
+import { PurchaseDocument } from 'src/purchase/entities/purchase.entity';
 
 @Injectable()
 export class TicketService {
- private readonly logger = new Logger(TicketService.name);
+  private readonly logger = new Logger(TicketService.name);
 
   constructor(
     private readonly ticketRepository: TicketRepository,
@@ -26,7 +25,7 @@ export class TicketService {
     private readonly ticketTypeService: TicketTypeService,
     private readonly userService: UsersService,
     private readonly purchaseService: PurchaseService, // Used for validation and linking
-  ) {}
+  ) { }
 
   /**
    * Maps a TicketDocument to a public-facing TicketResponseDto.
@@ -68,10 +67,10 @@ export class TicketService {
     };
   }
 
-   /**
-   * Generates a unique ticket code.
-   * You might want to make this more complex (e.g., prefix with event ID, use a specific format).
-   */
+  /**
+  * Generates a unique ticket code.
+  * You might want to make this more complex (e.g., prefix with event ID, use a specific format).
+  */
   private async generateUniqueTicketCode(): Promise<string> {
     let code: string;
     let isUnique = false;
@@ -164,6 +163,31 @@ export class TicketService {
 
     this.logger.log(`Ticket ${newTicket._id} created for purchase ${newTicket.purchaseId}.`);
     return this.mapToResponseDto(newTicket);
+  }
+
+  /**
+ * Generates ticket documents for all ticket items in a purchase.
+ * This should be called after a purchase is completed and payment is successful.
+ * @param purchase The purchase document (should include ticketItems, eventId, organizationId, buyerId, currency, etc.)
+ */
+  async generateTicketsForPurchase(purchase: PurchaseDocument): Promise<void> {
+    if (!purchase.ticketItems || purchase.ticketItems.length === 0) return;
+
+    for (const item of purchase.ticketItems) {
+      for (let i = 0; i < item.quantity; i++) {
+        await this.create({
+          ticketTypeId: item.ticketTypeId.toString(),
+          eventId: purchase.eventId.toString(),
+          organizationId: purchase.organizationId.toString(),
+          purchaseId: purchase._id.toString(),
+          ownerId: purchase.buyerId.toString(),
+          priceAtPurchase: item.unitPrice,
+          currencyAtPurchase: purchase.currency,
+          isTransferable: true, // or set based on your business logic
+          metadata: {}, // or pass any relevant metadata
+        });
+      }
+    }
   }
 
   /**
