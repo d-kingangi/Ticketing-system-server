@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { IsMongoId, IsNotEmpty, IsString, IsOptional, IsNumber, Min, IsEnum, IsDateString, IsBoolean } from "class-validator";
-import { SupportedCurrencies } from "../entities/ticket-type.entity";
+import { SupportedCurrency } from "src/shared/enum/supported-currency.enum";
 
 export class CreateTicketTypeDto {
     @ApiProperty({ description: 'The ID of the event this ticket type belongs to.', example: '60c72b2f9b1d4c001c8e4a01' })
@@ -29,10 +29,10 @@ export class CreateTicketTypeDto {
     @IsNotEmpty()
     price: number;
 
-    @ApiProperty({ description: 'The currency in which the ticket is priced.', enum: SupportedCurrencies, example: SupportedCurrencies.KES })
-    @IsEnum(SupportedCurrencies)
+    @ApiProperty({ description: 'The currency in which the ticket is priced.', enum: SupportedCurrency, example: SupportedCurrency.KES })
+    @IsEnum(SupportedCurrency)
     @IsNotEmpty()
-    currency: SupportedCurrencies;
+    currency: SupportedCurrency;
 
     @ApiProperty({ description: 'The total number of tickets of this type available for sale.', example: 100 })
     @IsNumber()
