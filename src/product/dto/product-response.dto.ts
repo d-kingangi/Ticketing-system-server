@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ProductType } from '../interfaces/product.interfaces';
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum'; // Add this import
 
 // --- Start of change: I've created nested response DTOs to match the entity structure.
 
@@ -86,6 +87,9 @@ export class ProductResponseDto {
 
     @ApiProperty({ example: true })
     isTrackable: boolean;
+
+    @ApiProperty({ description: 'The currency for this product.', enum: SupportedCurrency, example: SupportedCurrency.KES })
+    currency: SupportedCurrency;
 
     // --- Simple Product Fields ---
     @ApiPropertyOptional({ example: 'COKE-330ML' })
