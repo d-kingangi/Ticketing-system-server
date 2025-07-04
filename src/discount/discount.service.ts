@@ -288,7 +288,7 @@ export class DiscountService {
   async validateCode(
     code: string,
     organizationId: string,
-  ): Promise<DiscountResponseDto> {
+  ): Promise<DiscountDocument> { // <-- Change return type
     this.logger.log(`Validating discount code "${code}" for organization ${organizationId}`);
     const discount = await this.discountRepository.findActiveByCodeAndOrg(code, organizationId);
 
@@ -296,10 +296,8 @@ export class DiscountService {
       throw new BadRequestException('The provided discount code is invalid, expired, or has reached its usage limit.');
     }
 
-    // The calling service (e.g., PurchaseService) will receive this DTO
-    // and must perform the final check to see if the discount's scope and applicable IDs
-    // match any items in the user's cart.
-    return this.mapToResponseDto(discount);
+    // Return the actual DiscountDocument, not the DTO
+    return discount;
   }
 
   /**
