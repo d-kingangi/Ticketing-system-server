@@ -1,12 +1,7 @@
 import { Prop, SchemaFactory } from "@nestjs/mongoose";
 import { HydratedDocument, Schema, Types } from "mongoose";
 import { BaseDocument } from "src/database/base.schema";
-
-export enum SupportedCurrencies {
-    KES = 'KES',
-    USD = 'USD',
-}
-
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum'; // Add this import
 
 export type TicketTypeDocument = HydratedDocument<TicketType>;
 
@@ -27,8 +22,8 @@ export class TicketType extends BaseDocument {
     @Prop({ required: true, min: 0 })
     price: number;
 
-    @Prop({ type: String, enum: SupportedCurrencies, required: true })
-    currency: SupportedCurrencies;
+    @Prop({ type: String, enum: SupportedCurrency, required: true })
+    currency: SupportedCurrency;
 
     @Prop({ required: true, min: 0 })
     quantity: number;
