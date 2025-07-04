@@ -4,7 +4,7 @@ import { Model, Types } from 'mongoose';
 import { EventService } from 'src/event/event.service';
 import { Purchase, PurchaseDocument, PaymentStatus } from 'src/purchase/entities/purchase.entity';
 import { SalesSummaryReportDto, TicketTypeSalesDto } from './dto/sales-summary-report.dto';
-import { SupportedCurrencies } from 'src/ticket-type/entities/ticket-type.entity';
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum';
 
 @Injectable()
 export class ReportService {
@@ -94,7 +94,7 @@ export class ReportService {
 
     // Execute the aggregation pipeline.
     // The result will now include the currency for each ticket type summary.
-    const salesByTicketType: (TicketTypeSalesDto & { currency: SupportedCurrencies })[] =
+    const salesByTicketType: (TicketTypeSalesDto & { currency: SupportedCurrency })[] =
       await this.purchaseModel.aggregate(salesPipeline);
 
     // Calculate overall totals.
