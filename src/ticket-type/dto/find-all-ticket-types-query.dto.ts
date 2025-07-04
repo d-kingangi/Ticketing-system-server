@@ -10,7 +10,7 @@ import {
   IsMongoId,
   IsDateString,
 } from 'class-validator';
-import { SupportedCurrencies } from '../entities/ticket-type.entity';
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum';
 
 /**
  * DTO for querying ticket types with pagination, sorting, and filtering.
@@ -34,8 +34,8 @@ export class FindAllTicketTypesQueryDto {
 
   @ApiPropertyOptional({ description: 'Filter by currency.' })
   @IsOptional()
-  @IsEnum(SupportedCurrencies)
-  currency?: SupportedCurrencies;
+  @IsEnum(SupportedCurrency)
+  currency?: SupportedCurrency;
 
   @ApiPropertyOptional({ description: 'Filter by active status.', type: Boolean })
   @IsOptional()
