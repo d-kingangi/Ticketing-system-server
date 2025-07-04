@@ -10,6 +10,7 @@ import { TicketTypeModule } from '../ticket-type/ticket-type.module';
 import { UsersModule } from '../users/users.module';
 import { DiscountModule } from '../discount/discount.module'; // CHANGE: Import the new DiscountModule
 import { TicketModule } from 'src/ticket/ticket.module';
+import { ProductModule } from 'src/product/product.module';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { TicketModule } from 'src/ticket/ticket.module';
     EventModule,
     TicketTypeModule,
     UsersModule,
-    DiscountModule, // CHANGE: Add DiscountModule to the imports array
+    DiscountModule,
+    ProductModule,
     forwardRef(() => TicketModule),
   ],
   controllers: [PurchaseController],
