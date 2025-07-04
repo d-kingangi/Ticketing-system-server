@@ -240,17 +240,21 @@ export class PurchaseService {
     return this.mapToResponseDto(updatedPurchase);
   }
 
-  private async getOrgAndCurrency(eventId?: string, productItems?: PurchaseProductItemDto[]): Promise<{ organizationId: string, currency: SupportedCurrencies }> {
-    if (eventId) {
-      const event = await this.eventService.findOnePublic(eventId);
-      return { organizationId: event.organizationId, currency: event.currency };
-    }
-    if (productItems && productItems.length > 0) {
-      const product = await this.productService.findDocById(productItems[0].productId);
-      return { organizationId: product.organizationId.toString(), currency: product.currency };
-    }
-    throw new InternalServerErrorException('Could not determine organization and currency for the purchase.');
+  private async getOrgAndCurrency(
+  eventId?: string,
+  productItems?: PurchaseProductItemDto[]
+): Promise<{ organizationId: string; currency?: string }> {
+  if (eventId) {
+    const event = await this.eventService.findOnePublic(eventId);
+    // Event does not have currency, so return undefined for currency
+    return { organizationId: event.organizationId, currency: undefined };
   }
+  if (productItems && productItems.length > 0) {
+    const product = await this.productService.findDocById(productItems[0].productId);
+    return { organizationId: product.organizationId.toString(), currency: product.currency };
+  }
+  throw new InternalServerErrorException('Could not determine organization and currency for the purchase.');
+}
 
   /**
    * I've created this helper to get the correct price and variation from a product DTO.
