@@ -10,7 +10,7 @@ import {
   IsObject,
   IsEnum, // Added IsEnum for currency validation
 } from 'class-validator';
-import { SupportedCurrencies } from '../../ticket-type/entities/ticket-type.entity'; // Import SupportedCurrencies enum
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum';
 
 
 export class CreateTicketDto {
@@ -45,10 +45,10 @@ export class CreateTicketDto {
   @IsNotEmpty()
   priceAtPurchase: number;
 
-  @ApiProperty({ description: 'The currency of the ticket at the time of purchase.', enum: SupportedCurrencies, example: SupportedCurrencies.KES })
-  @IsEnum(SupportedCurrencies) // Validates against the enum
+  @ApiProperty({ description: 'The currency of the ticket at the time of purchase.', enum: SupportedCurrency, example: SupportedCurrency.KES })
+  @IsEnum(SupportedCurrency) // Validates against the enum
   @IsNotEmpty()
-  currencyAtPurchase: SupportedCurrencies; // Type is now the enum itself
+  currencyAtPurchase: SupportedCurrency; // Type is now the enum itself
 
   @ApiPropertyOptional({ description: 'Indicates if this ticket can be transferred to another user.', example: false, default: false })
   @IsOptional()
