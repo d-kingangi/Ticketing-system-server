@@ -81,7 +81,7 @@ export class EventService {
       const eventData = {
         ...createEventDto,
         userId,
-        organizationId: new Types.ObjectId(organizationId), // Ensure it's an ObjectId
+        organizationId,
       };
 
       const newEvent = await this.eventRepository.create(eventData);
