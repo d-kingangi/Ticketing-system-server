@@ -4,6 +4,7 @@ import { EventController } from './event.controller';
 import { EventService } from './event.service';
 import { Event, EventSchema } from './entities/event.entity';
 import { EventRepository } from './event.repository';
+import { OrganizationModule } from 'src/organization/organization.module';
 
 @Module({
   imports: [
