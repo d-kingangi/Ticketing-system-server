@@ -10,6 +10,7 @@ import {
     IsMongoId,
 } from 'class-validator';
 import { ProductType } from '../interfaces/product.interfaces';
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum'; 
 
 export class FindAllProductsQueryDto {
     @ApiPropertyOptional({ description: 'Page number for pagination.', default: 1, type: Number })
@@ -50,6 +51,11 @@ export class FindAllProductsQueryDto {
     @IsOptional()
     @IsEnum(ProductType)
     productType?: ProductType;
+
+    @ApiPropertyOptional({ description: 'Filter by currency.', enum: SupportedCurrency, example: SupportedCurrency.KES })
+    @IsOptional()
+    @IsEnum(SupportedCurrency)
+    currency?: SupportedCurrency;
 
     @ApiPropertyOptional({ description: 'Filter by active status.', type: Boolean, example: true })
     @IsOptional()
