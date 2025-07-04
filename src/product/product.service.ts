@@ -52,6 +52,7 @@ export class ProductService {
             organizationId: product.organizationId.toString(),
             isActive: product.isActive,
             isTrackable: product.isTrackable,
+            currency: product.currency,
             createdAt: product.createdAt,
             updatedAt: product.updatedAt,
         };
