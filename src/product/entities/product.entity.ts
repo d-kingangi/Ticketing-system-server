@@ -10,6 +10,7 @@ import {
 import { VariationAttributeSchemaFactory } from './variation-attribute.entity';
 import { VariationOptionSchemaFactory } from './variation-option.entity';
 import { VariationSchema, Variation } from './variation.entity';
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum';
 
 export type ProductDocument = HydratedDocument<Product>;
 
@@ -50,6 +51,14 @@ export class Product extends BaseDocument {
 
     @Prop({ default: true })
     isTrackable: boolean;
+
+    @Prop({
+        type: String,
+        enum: Object.values(SupportedCurrency),
+        required: true,
+        default: SupportedCurrency.KES,
+    })
+    currency: SupportedCurrency;
 
     // --- Fields for SIMPLE products ---
     // These are optional because they are only used when productType is 'simple'.
