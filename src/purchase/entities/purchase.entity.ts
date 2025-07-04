@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose'; // Import Types for ObjectId
 import { BaseDocument } from '../../database/base.schema'; // Corrected import path for BaseDocument
-import { SupportedCurrencies } from '../../ticket-type/entities/ticket-type.entity'; // Import SupportedCurrencies from TicketType module
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum';
 
 export enum PaymentStatus {
   PENDING = 'pending', // Payment initiated but not yet confirmed
@@ -84,8 +84,8 @@ export class Purchase extends BaseDocument {
   @Prop({ required: false, default: 0 })
   discountAmountSaved?: number;
 
-  @Prop({ type: String, enum: SupportedCurrencies, required: true })
-  currency: SupportedCurrencies;
+  @Prop({ type: String, enum: SupportedCurrency, required: true })
+  currency: SupportedCurrency;
 
   @Prop({ type: String, enum: PaymentStatus, default: PaymentStatus.PENDING })
   paymentStatus: PaymentStatus;
