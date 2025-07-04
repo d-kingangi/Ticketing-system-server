@@ -22,6 +22,7 @@ import { ProductType } from '../interfaces/product.interfaces';
 import { CreateVariationOptionDto } from './create-variation-option.dto';
 import { CreateVariationDto } from './create-variation.dto';
 import { IsLessThanConstraint } from './create-variation.dto';
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum';
 
 
 export class CreateProductDto {
@@ -69,6 +70,14 @@ export class CreateProductDto {
     @IsNumber()
     @Min(0)
     price?: number;
+
+    @ApiProperty({
+        description: 'The currency for this product.',
+        enum: SupportedCurrency,
+        example: SupportedCurrency.KES,
+    })
+    @IsEnum(SupportedCurrency)
+    currency: SupportedCurrency;
 
     @ApiPropertyOptional({ description: 'Stock quantity for a simple product.', example: 200 })
     @ValidateIf(o => o.productType === ProductType.SIMPLE)
