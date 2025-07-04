@@ -8,6 +8,7 @@ import { EventRepository } from './event.repository';
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Event.name, schema: EventSchema }]),
+    OrganizationModule,
   ],
   controllers: [EventController],
   providers: [EventService, EventRepository], // Add EventRepository to providers
