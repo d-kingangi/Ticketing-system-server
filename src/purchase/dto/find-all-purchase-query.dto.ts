@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsString, IsOptional, IsEnum, IsBoolean, IsInt, Min, IsMongoId, IsDateString } from 'class-validator';
 import { PaymentStatus } from '../entities/purchase.entity';
-import { SupportedCurrencies } from '../../ticket-type/entities/ticket-type.entity';
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum';
 
 export class FindAllPurchasesQueryDto {
     @ApiPropertyOptional({ description: 'Filter by buyer ID.' })
@@ -37,8 +37,8 @@ export class FindAllPurchasesQueryDto {
 
     @ApiPropertyOptional({ description: 'Filter by currency.' })
     @IsOptional()
-    @IsEnum(SupportedCurrencies)
-    currency?: SupportedCurrencies;
+    @IsEnum(SupportedCurrency)
+    currency?: SupportedCurrency;
 
     @ApiPropertyOptional({ description: 'Include soft-deleted purchases in the result.', type: Boolean, default: false })
     @IsOptional()
