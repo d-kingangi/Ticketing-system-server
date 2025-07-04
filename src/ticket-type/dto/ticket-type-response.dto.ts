@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { SupportedCurrencies } from '../entities/ticket-type.entity';
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum';
 
 export class TicketTypeResponseDto {
   @ApiProperty({ description: 'The unique identifier of the ticket type.' })
@@ -21,7 +21,7 @@ export class TicketTypeResponseDto {
   price: number;
 
   @ApiProperty({ description: 'The currency in which the ticket is priced.' })
-  currency: SupportedCurrencies;
+  currency: SupportedCurrency;
 
   @ApiProperty({ description: 'The total number of tickets of this type available for sale.' })
   quantity: number;
