@@ -18,6 +18,7 @@ import { TicketStatus } from 'src/ticket/entities/ticket.entity';
 import { ProductType } from 'src/product/interfaces/product.interfaces';
 import { ProductDocument } from 'src/product/entities/product.entity';
 import { DiscountScope } from 'src/discount/enum/discount-scope.enum';
+import { VariationDocument } from 'src/product/entities/variation.entity';
 
 @Injectable()
 export class PurchaseService {
@@ -259,18 +260,24 @@ export class PurchaseService {
   /**
    * I've created this helper to get the correct price and variation from a product DTO.
    */
-  private getProductPriceAndVariation(product: ProductDocument, itemDto: PurchaseProductItemDto): { price: number, variation?: Variation } {
-    if (product.productType === ProductType.SIMPLE) {
-      return { price: this.productService.getCurrentPrice(product) };
-    }
-    if (product.productType === ProductType.VARIABLE) {
-      if (!itemDto.variationId) throw new BadRequestException(`variationId is required for variable product ${product.name}.`);
-      const variation = product.variations.find(v => v._id.toString() === itemDto.variationId);
-      if (!variation) throw new NotFoundException(`Variation with ID ${itemDto.variationId} not found in product ${product.name}.`);
-      return { price: this.productService.getCurrentPrice(product, variation), variation };
-    }
-    throw new InternalServerErrorException('Unsupported product type encountered.');
+  private getProductPriceAndVariation(
+  product: ProductDocument,
+  itemDto: PurchaseProductItemDto
+): { price: number, variation?: VariationDocument } {
+  if (product.productType === ProductType.SIMPLE) {
+    return { price: this.productService.getCurrentPrice(product) };
   }
+  if (product.productType === ProductType.VARIABLE) {
+    if (!itemDto.variationId) throw new BadRequestException(`variationId is required for variable product ${product.name}.`);
+    // Cast variations as VariationDocument[]
+    const variation = (product.variations as VariationDocument[]).find(
+      v => v._id.toString() === itemDto.variationId
+    );
+    if (!variation) throw new NotFoundException(`Variation with ID ${itemDto.variationId} not found in product ${product.name}.`);
+    return { price: this.productService.getCurrentPrice(product, variation), variation };
+  }
+  throw new InternalServerErrorException('Unsupported product type encountered.');
+}
 
 
   /**
