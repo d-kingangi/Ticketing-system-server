@@ -19,6 +19,7 @@ import { ProductType } from 'src/product/interfaces/product.interfaces';
 import { ProductDocument } from 'src/product/entities/product.entity';
 import { DiscountScope } from 'src/discount/enum/discount-scope.enum';
 import { VariationDocument } from 'src/product/entities/variation.entity';
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum';
 
 @Injectable()
 export class PurchaseService {
@@ -177,7 +178,7 @@ export class PurchaseService {
       ticketItems: processedTicketItems,
       productItems: processedProductItems,
       totalAmount: subtotal - totalDiscountAmount,
-      currency,
+      currency: currency as SupportedCurrency,
       paymentStatus: PaymentStatus.PENDING,
       paymentMethod: createPurchaseDto.paymentMethod,
       appliedDiscountId: validDiscount ? new Types.ObjectId(validDiscount.id) : undefined,
@@ -242,42 +243,42 @@ export class PurchaseService {
   }
 
   private async getOrgAndCurrency(
-  eventId?: string,
-  productItems?: PurchaseProductItemDto[]
-): Promise<{ organizationId: string; currency?: string }> {
-  if (eventId) {
-    const event = await this.eventService.findOnePublic(eventId);
-    // Event does not have currency, so return undefined for currency
-    return { organizationId: event.organizationId, currency: undefined };
+    eventId?: string,
+    productItems?: PurchaseProductItemDto[]
+  ): Promise<{ organizationId: string; currency?: string }> {
+    if (eventId) {
+      const event = await this.eventService.findOnePublic(eventId);
+      // Event does not have currency, so return undefined for currency
+      return { organizationId: event.organizationId, currency: undefined };
+    }
+    if (productItems && productItems.length > 0) {
+      const product = await this.productService.findDocById(productItems[0].productId);
+      return { organizationId: product.organizationId.toString(), currency: product.currency };
+    }
+    throw new InternalServerErrorException('Could not determine organization and currency for the purchase.');
   }
-  if (productItems && productItems.length > 0) {
-    const product = await this.productService.findDocById(productItems[0].productId);
-    return { organizationId: product.organizationId.toString(), currency: product.currency };
-  }
-  throw new InternalServerErrorException('Could not determine organization and currency for the purchase.');
-}
 
   /**
    * I've created this helper to get the correct price and variation from a product DTO.
    */
   private getProductPriceAndVariation(
-  product: ProductDocument,
-  itemDto: PurchaseProductItemDto
-): { price: number, variation?: VariationDocument } {
-  if (product.productType === ProductType.SIMPLE) {
-    return { price: this.productService.getCurrentPrice(product) };
+    product: ProductDocument,
+    itemDto: PurchaseProductItemDto
+  ): { price: number, variation?: VariationDocument } {
+    if (product.productType === ProductType.SIMPLE) {
+      return { price: this.productService.getCurrentPrice(product) };
+    }
+    if (product.productType === ProductType.VARIABLE) {
+      if (!itemDto.variationId) throw new BadRequestException(`variationId is required for variable product ${product.name}.`);
+      // Cast variations as VariationDocument[]
+      const variation = (product.variations as VariationDocument[]).find(
+        v => v._id.toString() === itemDto.variationId
+      );
+      if (!variation) throw new NotFoundException(`Variation with ID ${itemDto.variationId} not found in product ${product.name}.`);
+      return { price: this.productService.getCurrentPrice(product, variation), variation };
+    }
+    throw new InternalServerErrorException('Unsupported product type encountered.');
   }
-  if (product.productType === ProductType.VARIABLE) {
-    if (!itemDto.variationId) throw new BadRequestException(`variationId is required for variable product ${product.name}.`);
-    // Cast variations as VariationDocument[]
-    const variation = (product.variations as VariationDocument[]).find(
-      v => v._id.toString() === itemDto.variationId
-    );
-    if (!variation) throw new NotFoundException(`Variation with ID ${itemDto.variationId} not found in product ${product.name}.`);
-    return { price: this.productService.getCurrentPrice(product, variation), variation };
-  }
-  throw new InternalServerErrorException('Unsupported product type encountered.');
-}
 
 
   /**
