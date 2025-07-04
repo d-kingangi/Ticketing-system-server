@@ -7,6 +7,7 @@ import { DiscountController } from './discount.controller';
 import { EventModule } from '../event/event.module'; // Import EventModule
 import { OrganizationModule } from '../organization/organization.module'; // Import OrganizationModule
 import { TicketTypeModule } from '../ticket-type/ticket-type.module'; // Import TicketTypeModule
+import { ProductModule } from 'src/product/product.module'; 
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { TicketTypeModule } from '../ticket-type/ticket-type.module'; // Import 
     EventModule,
     OrganizationModule,
     TicketTypeModule,
+    ProductModule
   ],
   controllers: [DiscountController],
   providers: [DiscountService, DiscountRepository],
