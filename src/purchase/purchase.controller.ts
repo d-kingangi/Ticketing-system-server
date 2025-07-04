@@ -75,8 +75,8 @@ export class PurchaseController {
     return this.purchaseService.create(
       createPurchaseDto,
       buyerId,
-      ipAddress,
-      userAgent,
+      // ipAddress,
+      // userAgent,
     );
   }
 
