@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentStatus } from '../entities/purchase.entity';
-import { SupportedCurrencies } from '../../ticket-type/entities/ticket-type.entity';
+import { SupportedCurrency } from 'src/shared/enum/supported-currency.enum';
 
 export class PurchaseTicketItemResponseDto {
   @ApiProperty({ description: 'The ID of the ticket type purchased.' })
@@ -85,7 +85,7 @@ export class PurchaseResponseDto {
   discountAmountSaved?: number;
 
   @ApiProperty({ description: 'The currency of the total amount.' })
-  currency: SupportedCurrencies;
+  currency: SupportedCurrency;
 
   @ApiProperty({ description: 'The current status of the payment for this purchase.' })
   paymentStatus: PaymentStatus;
